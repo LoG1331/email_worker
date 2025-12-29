@@ -1,0 +1,23 @@
+{
+  "name": "email_worker",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "npm run build:frontend && wrangler dev",
+    "deploy": "npm run build:frontend && wrangler deploy",
+    "build:frontend": "cd frontend && npm run build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "html-to-text": "^9.0.5",
+    "postal-mime": "^2.6.1",
+    "wrangler": "^4.55.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.2"
+  }
+}

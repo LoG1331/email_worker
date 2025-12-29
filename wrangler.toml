@@ -1,0 +1,49 @@
+name = "mail00"
+main = "index.js"
+compatibility_date = "2025-12-25"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[durable_objects.bindings]]
+name = "EMAIL_INBOX"
+class_name = "InboxDB"
+
+[[durable_objects.bindings]]
+name = "REGISTRATION_STORE"
+class_name = "RegistrationDB"
+
+[[durable_objects.bindings]]
+name = "SERVICE_STORE"
+class_name = "ServiceDB"
+
+[[durable_objects.bindings]]
+name = "USER_STORE"
+class_name = "UserDB"
+
+[[durable_objects.bindings]]
+name = "PERMISSION_STORE"
+class_name = "PermissionDB"
+
+[[durable_objects.bindings]]
+name = "PENDING_STORE"
+class_name = "PendingDB"
+
+[[durable_objects.bindings]]
+name = "EMAIL_GROUP_STORE"
+class_name = "GroupDB"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = [
+    "InboxDB",
+    "RegistrationDB",
+    "ServiceDB",
+    "UserDB",
+    "PermissionDB",
+    "PendingDB",
+    "GroupDB"
+]
+
+
