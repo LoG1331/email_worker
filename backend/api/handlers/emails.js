@@ -9,12 +9,29 @@ export async function handleEmailRoutes(request, env, url, storage) {
     if (method === 'GET' && pathname === '/api/all') {
         const limit = parseInt(searchParams.get('limit') || '100');
         const offset = parseInt(searchParams.get('offset') || '0');
-        const emails = await inboxDB.getAll(limit, offset);
-        return jsonResponse({ count: emails.length, total: emails.total, emails: emails.emails });
+        const result = await inboxDB.getAll(limit, offset);
+
+        // Add group counts for each email
+        const { groupDB } = storage;
+        const emailsWithGroups = await Promise.all(
+            (result.emails || []).map(async (email) => {
+                if (email.to) {
+                    const groups = await groupDB.getGroupsForEmail(email.to);
+                    return { ...email, groupCount: groups.length };
+                }
+                return { ...email, groupCount: 0 };
+            })
+        );
+
+        return jsonResponse({
+            count: emailsWithGroups.length,
+            total: result.total,
+            emails: emailsWithGroups
+        });
     }
 
     if (method === 'POST' && pathname === '/api/create') {
-        const email = generateRandomEmail(env);
+        const email = await generateRandomEmail(env);
         return jsonResponse({
             success: true,
             email,

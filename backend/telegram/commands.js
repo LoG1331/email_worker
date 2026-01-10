@@ -13,7 +13,8 @@ export async function handleTelegramCommand(update, env) {
     const reg = new RegistrationDB(env);
     const pendingDB = new PendingDB(env);
     const reply = m => sendMsg(env, chatId, m);
-    const { EMAIL_DOMAIN } = getConfig(env);
+    const config = await getConfig(env);
+    const EMAIL_DOMAIN = config?.EMAIL_DOMAIN || '';
 
     if (text === '/start') {
         return sendMsg(env, chatId, `👋 Chào mừng!\n\n📧 Chọn tùy chọn hoặc dùng:\n• /use abc - Thêm abc@${EMAIL_DOMAIN}`, MENU_KB);
@@ -29,11 +30,9 @@ export async function handleTelegramCommand(update, env) {
         if (owner && owner !== userId) return reply(`❌ ${email} đã được sử dụng.`);
         if (owner === userId) return reply(`⚠️ Đã có ${email} rồi.`);
 
-        // Check permission
         const { access } = await ensureUserAndCheckPermission(env, msg.from, prefix);
 
         if (!access.hasAccess) {
-            // No permission - create pending request
             const result = await pendingDB.create(userId, prefix);
             if (result.success) {
                 return reply(`📨 Đã gửi yêu cầu!\n\n📧 Email: ${email}\n\n⏳ Admin sẽ duyệt và bạn sẽ nhận thông báo ngay.`);
@@ -42,7 +41,6 @@ export async function handleTelegramCommand(update, env) {
             }
         }
 
-        // Has permission
         await reg.register(userId, email);
         const count = (await reg.getEmailsByOwner(userId)).length;
         return reply(`✅ Đã thêm!\n\n📧 ${email}\n📋 Tổng: ${count}`);

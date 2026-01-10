@@ -1,7 +1,9 @@
-name = "mail00"
+name = "mail03"
 main = "index.js"
 compatibility_date = "2025-12-25"
 
+[vars]
+WORKER_NAME = "mail03"
 [assets]
 directory = "./public"
 binding = "ASSETS"
@@ -46,4 +48,7 @@ new_sqlite_classes = [
     "GroupDB"
 ]
 
+[[kv_namespaces]]
+binding = "CONFIG_STORE"
+id = "1054f6dd14a540b29ad5c52dbbae9fed"
 

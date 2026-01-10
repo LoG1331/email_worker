@@ -300,6 +300,7 @@ export default function EmailsTab({ apiKey, allEmails, setAllEmails }) {
                                                                     idKey={`${email.id || email.to}-selector`}
                                                                     activeKey={activeGroupSelector}
                                                                     setActiveKey={setActiveGroupSelector}
+                                                                    initialGroupCount={email.groupCount || 0}
                                                                 />
                                                             )}
                                                         </div>

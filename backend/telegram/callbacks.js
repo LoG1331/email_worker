@@ -23,25 +23,24 @@ export async function handleCallbackQuery(update, env) {
     const svc = new ServiceDB(env);
     const pendingDB = new PendingDB(env);
     const getEmails = () => reg.getEmailsByOwner(userId);
+    const edit = (text, kb) => editMsg(env, chatId, msgId, text, kb);
 
     const handlers = {
         async menu() {
-            await editMsg(env, chatId, msgId, '👋 Chào mừng đến Email Bot!\n\n📧 Chọn một tùy chọn:', MENU_KB);
+            await edit('👋 Chào mừng đến Email Bot!\n\n📧 Chọn một tùy chọn:', MENU_KB);
         },
 
         async create() {
-            // Check permission
             const { access } = await ensureUserAndCheckPermission(env, q.from);
 
             if (!access.hasAccess) {
-                // No permission - create random email and pending request
-                const email = generateRandomEmail(env);
+                const email = await generateRandomEmail(env);
                 const prefix = email.split('@')[0];
 
                 const result = await pendingDB.create(userId, prefix);
 
                 if (result.success) {
-                    return editMsg(env, chatId, msgId,
+                    return edit(
                         `📨 Đã gửi yêu cầu!\n\n📧 Email: ${email}\n\n⏳ Admin sẽ duyệt và bạn sẽ nhận thông báo ngay khi được cấp quyền.\n\n💡 Bạn có thể tiếp tục sử dụng bot bình thường.`,
                         [
                             [{ text: '📧 Tạo thêm', callback_data: 'create' }],
@@ -49,23 +48,21 @@ export async function handleCallbackQuery(update, env) {
                         ]
                     );
                 } else {
-                    // Already has pending request
-                    return editMsg(env, chatId, msgId,
+                    return edit(
                         `⏳ Bạn đã có yêu cầu đang chờ duyệt.\n\n💡 Admin sẽ thông báo khi duyệt xong.`,
                         [BACK]
                     );
                 }
             }
 
-            // Has permission - create email
-            const email = generateRandomEmail(env);
+            const email = await generateRandomEmail(env);
             const owner = await reg.getOwner(email);
             if (owner && owner !== userId) {
-                return editMsg(env, chatId, msgId, '❌ Email đã được sử dụng. Thử lại.', [BACK]);
+                return edit('❌ Email đã được sử dụng. Thử lại.', [BACK]);
             }
             await reg.register(userId, email);
             const count = (await getEmails()).length;
-            await editMsg(env, chatId, msgId, `✅ Đã tạo!\n\n📧 ${email}\n📋 Tổng: ${count}`, [
+            await edit(`✅ Đã tạo!\n\n📧 ${email}\n📋 Tổng: ${count}`, [
                 [{ text: '📋 Copy', copy_text: { text: email } }],
                 BACK
             ]);
@@ -74,13 +71,13 @@ export async function handleCallbackQuery(update, env) {
         async myemail() {
             const emails = await getEmails();
             if (!emails.length) {
-                return editMsg(env, chatId, msgId, '❌ Chưa có email.', [
+                return edit('❌ Chưa có email.', [
                     [{ text: '📧 Tạo email', callback_data: 'create' }], BACK
                 ]);
             }
             const kb = emails.map(e => [{ text: `📧 ${e}`, callback_data: `email_detail:${e}` }]);
             kb.push(BACK);
-            await editMsg(env, chatId, msgId, `📧 Email (${emails.length}):`, kb);
+            await edit(`📧 Email (${emails.length}):`, kb);
         },
 
         async email_detail() {
@@ -90,7 +87,7 @@ export async function handleCallbackQuery(update, env) {
             text += services.length
                 ? `\n📊 Dịch vụ (${services.length}):\n` + services.map((s, i) => `  ${i + 1}. ${s.service} (${s.emailCount})`).join('\n')
                 : '\n📭 Chưa có dịch vụ.';
-            await editMsg(env, chatId, msgId, text, [
+            await edit(text, [
                 [{ text: '📋 Copy', copy_text: { text: email } }],
                 [{ text: '🗑 Xóa', callback_data: `remove:${email}` }],
                 [{ text: '⬅️ Danh sách', callback_data: 'myemail' }]
@@ -100,12 +97,12 @@ export async function handleCallbackQuery(update, env) {
         async remove() {
             await reg.unregister(param);
             const count = (await getEmails()).length;
-            await editMsg(env, chatId, msgId, `✅ Đã xóa ${param}\n📋 Còn: ${count}`, [BACK]);
+            await edit(`✅ Đã xóa ${param}\n📋 Còn: ${count}`, [BACK]);
         },
 
         async services() {
             const emails = await getEmails();
-            if (!emails.length) return editMsg(env, chatId, msgId, '❌ Chưa có email.', [BACK]);
+            if (!emails.length) return edit('❌ Chưa có email.', [BACK]);
 
             const allServices = await Promise.all(emails.map(e => svc.getServicesByEmail(e)));
 
@@ -119,13 +116,13 @@ export async function handleCallbackQuery(update, env) {
                 }
             });
 
-            if (!map.size) return editMsg(env, chatId, msgId, '📭 Chưa có dịch vụ.', [BACK]);
+            if (!map.size) return edit('📭 Chưa có dịch vụ.', [BACK]);
 
             const kb = [...map.entries()].map(([s, d]) =>
                 [{ text: `🏢 ${s} (${d.count})`, callback_data: `service_detail:${s}` }]
             );
             kb.push(BACK);
-            await editMsg(env, chatId, msgId, `📊 Dịch vụ (${map.size}):`, kb);
+            await edit(`📊 Dịch vụ (${map.size}):`, kb);
         },
 
         async service_detail() {
@@ -143,13 +140,13 @@ export async function handleCallbackQuery(update, env) {
                 }
             });
             text += `\n📬 Tổng: ${total}`;
-            await editMsg(env, chatId, msgId, text, [[{ text: '⬅️ Dịch vụ', callback_data: 'services' }]]);
+            await edit(text, [[{ text: '⬅️ Dịch vụ', callback_data: 'services' }]]);
         },
 
         async removeall() {
             const emails = await getEmails();
-            if (!emails.length) return editMsg(env, chatId, msgId, '❌ Không có email.', [BACK]);
-            await editMsg(env, chatId, msgId, `⚠️ Xóa TẤT CẢ ${emails.length} email?`, [
+            if (!emails.length) return edit('❌ Không có email.', [BACK]);
+            await edit(`⚠️ Xóa TẤT CẢ ${emails.length} email?`, [
                 [{ text: '✅ Xác nhận', callback_data: 'removeall_confirm' }, { text: '❌ Hủy', callback_data: 'menu' }]
             ]);
         },
@@ -157,7 +154,7 @@ export async function handleCallbackQuery(update, env) {
         async removeall_confirm() {
             const emails = await getEmails();
             await Promise.all(emails.map(e => reg.unregister(e)));
-            await editMsg(env, chatId, msgId, `✅ Đã xóa ${emails.length} email.`, [BACK]);
+            await edit(`✅ Đã xóa ${emails.length} email.`, [BACK]);
         }
     };
 

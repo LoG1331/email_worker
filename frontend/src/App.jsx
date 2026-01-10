@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { AnimatePresence } from 'framer-motion'
 import LoginModal from './components/modals/LoginModal'
+import SettingsModal from './components/modals/SettingsModal'
 import Header from './components/layout/Header'
 import Tabs from './components/layout/Tabs'
 import StarredEmailsTab from './components/tabs/GroupsTab'
@@ -18,6 +19,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('starred')
   const [allEmails, setAllEmails] = useState([])
   const [allServices, setAllServices] = useState([])
+  const [showSettings, setShowSettings] = useState(false)
 
   useEffect(() => {
     const savedKey = localStorage.getItem(STORAGE_KEY)
@@ -45,9 +47,7 @@ function App() {
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(227,175,96,0.25),_transparent_60%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,_rgba(31,106,92,0.2),_transparent_55%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(120deg,_rgba(255,248,239,0.9),_rgba(246,239,230,0.95))]" />
-        <div className="absolute top-[-20%] left-[-10%] w-[45%] h-[45%] bg-[#f1d6b5] rounded-full blur-[120px]" />
-        <div className="absolute bottom-[-15%] right-[-5%] w-[40%] h-[40%] bg-[#cfe2d3] rounded-full blur-[120px]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_80%,_rgba(197,83,45,0.15),_transparent_50%)]" />
       </div>
 
       <Toaster
@@ -69,7 +69,8 @@ function App() {
 
       {!showLogin && (
         <div className="max-w-6xl mx-auto relative z-10">
-          <Header onLogout={handleLogout} showLogout={true} apiKey={apiKey} />
+          <Header onLogout={handleLogout} showLogout={true} apiKey={apiKey} onOpenSettings={() => setShowSettings(true)} />
+          <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} apiKey={apiKey} />
           <Tabs activeTab={activeTab} onTabChange={setActiveTab} />
 
           <AnimatePresence mode="wait">

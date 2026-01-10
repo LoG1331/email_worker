@@ -52,31 +52,44 @@ export default {
     },
 
     async fetch(request, env) {
-        const url = new URL(request.url);
-        const { pathname } = url;
+        try {
+            const url = new URL(request.url);
+            const { pathname } = url;
 
-        if (pathname === '/webhook' && request.method === 'POST') {
-            try {
-                const update = await request.json();
-                if (update.callback_query) {
-                    await handleCallbackQuery(update, env);
-                } else if (update.message) {
-                    await handleTelegramCommand(update, env);
+            if (pathname === '/webhook' && request.method === 'POST') {
+                try {
+                    const update = await request.json();
+                    if (update.callback_query) {
+                        await handleCallbackQuery(update, env);
+                    } else if (update.message) {
+                        await handleTelegramCommand(update, env);
+                    }
+                    return new Response('OK');
+                } catch (e) {
+                    console.error('Webhook error:', e);
+                    return new Response('Error', { status: 500 });
                 }
-                return new Response('OK');
-            } catch {
-                return new Response('Error', { status: 500 });
             }
+
+            if (pathname.startsWith('/api/')) return handleApiRequest(request, env, url);
+            if (pathname === '/health') return new Response('OK');
+
+            // Serve static assets from /public directory
+            if (pathname === '/' || pathname === '/index.html') {
+                return env.ASSETS.fetch(request);
+            }
+
+            return new Response('Email Worker Bot');
+        } catch (error) {
+            console.error('Global fetch error:', error);
+            return new Response(JSON.stringify({
+                error: 'Worker Exception',
+                message: error.message,
+                stack: error.stack
+            }), {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' }
+            });
         }
-
-        if (pathname.startsWith('/api/')) return handleApiRequest(request, env, url);
-        if (pathname === '/health') return new Response('OK');
-
-        // Serve static assets from /public directory
-        if (pathname === '/' || pathname === '/index.html') {
-            return env.ASSETS.fetch(request);
-        }
-
-        return new Response('Email Worker Bot');
     }
 };

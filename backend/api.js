@@ -9,15 +9,22 @@ import { handlePermissionRoutes } from './api/handlers/permissions.js';
 import { handlePendingRoutes } from './api/handlers/pending.js';
 import { handleGroupRoutes } from './api/handlers/groups.js';
 import { handleTelegramSetupRoutes } from './api/handlers/telegram.js';
+import { handleSetupRoutes } from './api/handlers/setup.js';
 
 export async function handleApiRequest(request, env, url) {
     if (request.method === 'OPTIONS') {
         return new Response(null, { headers: CORS_HEADERS });
     }
 
+    // Allow config status check without auth (for login modal)
+    const isConfigStatusCheck = (url.pathname === '/api/config' || url.pathname === '/api/setup/status') && request.method === 'GET';
+
+    // All routes require authentication (if configured), except config status check
     const authKey = request.headers.get('Authorization')?.replace('Bearer ', '');
-    const { API_KEY } = getConfig(env);
-    if (authKey !== API_KEY) {
+    const config = await getConfig(env);
+
+    // If configured and not a status check, require valid API key
+    if (config && !isConfigStatusCheck && authKey !== config.API_KEY) {
         return jsonResponse({ error: 'Unauthorized' }, 401);
     }
 
@@ -38,7 +45,8 @@ export async function handleApiRequest(request, env, url) {
         handlePermissionRoutes,
         handlePendingRoutes,
         handleGroupRoutes,
-        handleTelegramSetupRoutes
+        handleTelegramSetupRoutes,
+        handleSetupRoutes
     ];
 
     for (const route of routes) {

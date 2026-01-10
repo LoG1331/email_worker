@@ -30,6 +30,7 @@ export default function GroupsTab({ apiKey, activeTab }) {
     const [newEmailAddress, setNewEmailAddress] = useState('')
     const [polling, setPolling] = useState(false)
     const [pollInterval, setPollInterval] = useState(30000)
+    const [detailTab, setDetailTab] = useState('emails') // 'addresses' or 'emails'
 
     useEffect(() => {
         if (apiKey && activeTab === 'starred') {
@@ -47,7 +48,7 @@ export default function GroupsTab({ apiKey, activeTab }) {
     useEffect(() => {
         if (!apiKey || !selectedGroup || !polling || pollInterval <= 0) return
         const id = setInterval(() => {
-            loadGroupEmails(selectedGroup.id)
+            loadGroupEmails(selectedGroup.id, true)
         }, pollInterval)
         return () => clearInterval(id)
     }, [apiKey, selectedGroup, polling, pollInterval])
@@ -66,7 +67,8 @@ export default function GroupsTab({ apiKey, activeTab }) {
         }
     }
 
-    const loadGroupEmails = async (groupId) => {
+
+    const loadGroupEmails = async (groupId, isRefresh = false) => {
         setLoading(true)
         try {
             const response = await fetch(`/api/groups/${groupId}/emails`, {
@@ -74,8 +76,27 @@ export default function GroupsTab({ apiKey, activeTab }) {
             })
             if (response.ok) {
                 const data = await response.json()
-                setAddresses(data.addresses || [])
-                setEmails(data.emails || [])
+
+                if (isRefresh) {
+                    // Only update if there are changes
+                    const newEmails = data.emails || []
+                    const existingIds = new Set(emails.map(e => e.id || e.to))
+                    const freshEmails = newEmails.filter(e => !existingIds.has(e.id || e.to))
+
+                    if (freshEmails.length > 0) {
+                        setEmails(prev => [...freshEmails, ...prev])
+                        toast.success(`Đã thêm ${freshEmails.length} email mới`)
+                    } else {
+                        toast.success('Không có email mới')
+                    }
+
+                    // Always update addresses in case they changed
+                    setAddresses(data.addresses || [])
+                } else {
+                    // Initial load - replace everything
+                    setAddresses(data.addresses || [])
+                    setEmails(data.emails || [])
+                }
             }
         } catch {
             toast.error('Lỗi tải email')
@@ -264,77 +285,42 @@ export default function GroupsTab({ apiKey, activeTab }) {
     }
 
     return (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8 pb-20">
-            {/* Header & controls */}
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6 pb-20">
+            {/* Header */}
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                     <h2 className="text-3xl font-black text-[#2a1f1a] font-display">Quản lý Nhóm Email</h2>
                     <p className="text-sm text-[#6b5b52] mt-1">Sắp xếp nhóm rõ ràng, chi tiết địa chỉ và email nhận.</p>
                 </div>
-                <div className="flex flex-wrap gap-3">
-                    <button
-                        onClick={() => {
-                            loadGroups()
-                            if (selectedGroup) loadGroupEmails(selectedGroup.id)
-                        }}
-                        className="btn-secondary h-12 px-5 flex items-center gap-2"
-                    >
-                        <RefreshCw size={16} />
-                        Làm mới
-                    </button>
-                    <div className="flex items-center gap-2 text-xs font-bold text-[#6b5b52] bg-[#fffdf8] border border-[#ead8c5] rounded-xl px-3 py-2">
-                        <label className="flex items-center gap-2 cursor-pointer select-none">
-                            <input
-                                type="checkbox"
-                                checked={polling}
-                                onChange={(e) => {
-                                    const checked = e.target.checked
-                                    setPolling(checked)
-                                    if (checked && pollInterval === 0) setPollInterval(30000)
-                                }}
-                                className="w-4 h-4 rounded border-[#cdb8a3] text-[#c5532d] focus:ring-2 focus:ring-[#d59b46]/40"
-                            />
-                            Auto reload nhóm
-                        </label>
-                        <select
-                            value={pollInterval}
-                            onChange={(e) => setPollInterval(Number(e.target.value))}
-                            className="bg-transparent border-none text-[#2a1f1a] text-xs font-bold focus:outline-none"
-                            disabled={!polling}
-                        >
-                            <option value={15000}>15s</option>
-                            <option value={30000}>30s</option>
-                            <option value={60000}>1 phút</option>
-                        </select>
-                    </div>
-                    <button
-                        onClick={() => setShowCreateModal(true)}
-                        className="btn-primary h-12 px-6 flex items-center gap-3"
-                    >
-                        <Plus size={18} />
-                        Tạo nhóm mới
-                    </button>
-                </div>
+                <button
+                    onClick={() => setShowCreateModal(true)}
+                    className="btn-primary h-12 px-6 flex items-center gap-3 w-full lg:w-auto"
+                >
+                    <Plus size={18} />
+                    Tạo nhóm mới
+                </button>
             </div>
 
-            {/* Stats */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {[
-                    { label: 'Số nhóm', value: groups.length },
-                    { label: 'Email trong nhóm đã chọn', value: selectedGroup ? addresses.length : 0 },
-                    { label: 'Tổng địa chỉ trong tất cả nhóm', value: groups.reduce((s, g) => s + (g.emailCount || 0), 0) }
-                ].map((stat, i) => (
-                    <div key={i} className="surface-panel rounded-2xl p-4 flex flex-col gap-1">
-                        <span className="text-xs font-black uppercase tracking-widest text-[#9c8573]">{stat.label}</span>
-                        <span className="text-3xl font-black font-display text-[#2a1f1a]">{stat.value}</span>
-                    </div>
-                ))}
+            {/* Compact Stats */}
+            <div className="surface-panel rounded-2xl p-4 flex flex-wrap gap-6 items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <span className="text-xs font-black uppercase tracking-widest text-[#9c8573]">Số nhóm:</span>
+                    <span className="text-2xl font-black font-display text-[#2a1f1a]">{groups.length}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                    <span className="text-xs font-black uppercase tracking-widest text-[#9c8573]">Email trong nhóm:</span>
+                    <span className="text-2xl font-black font-display text-[#2a1f1a]">{selectedGroup ? addresses.length : 0}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                    <span className="text-xs font-black uppercase tracking-widest text-[#9c8573]">Tổng địa chỉ:</span>
+                    <span className="text-2xl font-black font-display text-[#2a1f1a]">{groups.reduce((s, g) => s + (g.emailCount || 0), 0)}</span>
+                </div>
             </div>
 
             {/* Two-column layout */}
             <div className="grid grid-cols-1 lg:grid-cols-[340px,1fr] gap-6">
                 {/* Sidebar: group list */}
-                <div className="surface-panel rounded-3xl p-4 flex flex-col gap-3 max-h-[70vh] lg:sticky lg:top-6">
+                <div className="surface-panel rounded-3xl p-4 flex flex-col gap-3 max-h-[75vh] lg:sticky lg:top-6">
                     <div className="flex items-center justify-between mb-1">
                         <span className="text-xs font-black uppercase tracking-widest text-[#9c8573]">Danh sách nhóm</span>
                         <span className="text-xs font-bold text-[#6b5b52]">{groups.length} nhóm</span>
@@ -346,11 +332,10 @@ export default function GroupsTab({ apiKey, activeTab }) {
                                 <button
                                     key={group.id}
                                     onClick={() => setSelectedGroup(group)}
-                                    className={`w-full text-left p-4 rounded-2xl border flex items-center justify-between gap-3 transition-all ${
-                                        isActive
-                                            ? 'border-[#c5532d] bg-[#fff8ef] shadow-sm'
-                                            : 'border-[#ead8c5] hover:border-[#d59b46] bg-[#f9efe3]'
-                                    }`}
+                                    className={`w-full text-left p-4 rounded-2xl border flex items-center justify-between gap-3 transition-all ${isActive
+                                        ? 'border-[#c5532d] bg-[#fff8ef] shadow-sm'
+                                        : 'border-[#ead8c5] hover:border-[#d59b46] bg-[#f9efe3]'
+                                        }`}
                                 >
                                     <div className="flex items-center gap-3 min-w-0">
                                         <div className="w-3 h-3 rounded-full" style={{ backgroundColor: group.color }} />
@@ -392,140 +377,214 @@ export default function GroupsTab({ apiKey, activeTab }) {
                 </div>
 
                 {/* Detail panel */}
-                <div className="surface-panel rounded-3xl p-6 space-y-6 min-h-[70vh]">
+                <div className="surface-panel rounded-3xl overflow-hidden min-h-[75vh] flex flex-col">
                     {!selectedGroup ? (
-                        <div className="surface-soft rounded-2xl p-10 text-center">
+                        <div className="surface-soft rounded-2xl p-10 text-center m-6">
                             <p className="text-[#9c8573] font-bold">Chọn một nhóm bên trái để xem chi tiết.</p>
                         </div>
                     ) : (
                         <>
-                            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-full" style={{ backgroundColor: selectedGroup.color }} />
-                                    <div>
-                                        <div className="text-2xl font-black text-[#2a1f1a] font-display">{selectedGroup.name}</div>
-                                        <div className="text-sm font-bold text-[#9c8573]">{addresses.length} địa chỉ • {emails.length} email hiển thị</div>
+                            {/* Sticky header with controls */}
+                            <div className="sticky top-0 bg-[#fff8ef] border-b border-[#ead8c5] p-6 z-10">
+                                <div className="flex flex-col gap-4">
+                                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-full" style={{ backgroundColor: selectedGroup.color }} />
+                                            <div>
+                                                <div className="text-2xl font-black text-[#2a1f1a] font-display">{selectedGroup.name}</div>
+                                                <div className="text-sm font-bold text-[#9c8573]">{addresses.length} địa chỉ • {emails.length} email</div>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => setShowAddEmailModal(true)}
+                                            className="btn-secondary h-11 px-6 flex items-center gap-2"
+                                        >
+                                            <Plus size={16} />
+                                            Thêm địa chỉ
+                                        </button>
+                                    </div>
+
+                                    {/* Controls row */}
+                                    <div className="flex flex-wrap gap-3 items-center">
+                                        <button
+                                            onClick={() => loadGroupEmails(selectedGroup.id, true)}
+                                            disabled={loading}
+                                            className="btn-primary h-10 px-5 flex items-center gap-2"
+                                        >
+                                            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                                            Làm mới
+                                        </button>
+                                        <div className="flex items-center gap-2 text-xs font-bold text-[#6b5b52] bg-[#fffdf8] border border-[#ead8c5] rounded-xl px-3 py-2">
+                                            <label className="flex items-center gap-2 cursor-pointer select-none">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={polling}
+                                                    onChange={(e) => {
+                                                        const checked = e.target.checked
+                                                        setPolling(checked)
+                                                        if (checked && pollInterval === 0) setPollInterval(30000)
+                                                    }}
+                                                    className="w-4 h-4 rounded border-[#cdb8a3] text-[#c5532d] focus:ring-2 focus:ring-[#d59b46]/40"
+                                                />
+                                                Auto reload
+                                            </label>
+                                            <select
+                                                value={pollInterval}
+                                                onChange={(e) => setPollInterval(Number(e.target.value))}
+                                                className="bg-transparent border-none text-[#2a1f1a] text-xs font-bold focus:outline-none"
+                                                disabled={!polling}
+                                            >
+                                                <option value={15000}>15s</option>
+                                                <option value={30000}>30s</option>
+                                                <option value={60000}>1 phút</option>
+                                            </select>
+                                        </div>
                                     </div>
                                 </div>
-                                <button
-                                    onClick={() => setShowAddEmailModal(true)}
-                                    className="btn-secondary h-11 px-6 flex items-center gap-2"
-                                >
-                                    <Plus size={16} />
-                                    Thêm địa chỉ email
-                                </button>
                             </div>
 
-                            {/* Addresses */}
-                            <div className="rounded-2xl border border-[#ead8c5] p-5 bg-[#f8efe4] space-y-3">
-                                <div className="flex items-center justify-between">
-                                    <div className="text-xs font-black text-[#6b5b52] uppercase tracking-widest">
-                                        Địa chỉ email ({addresses.length})
-                                    </div>
-                                    {addresses.length > 0 && (
-                                        <button
-                                            onClick={() => {
-                                                const emailList = addresses.map(a => a.emailAddress).join('\n')
-                                                navigator.clipboard.writeText(emailList)
-                                                toast.success(`Đã copy ${addresses.length} địa chỉ email`)
-                                            }}
-                                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#6b5b52] hover:text-[#c5532d] bg-[#fff8ef] hover:bg-[#f6ecdf] rounded-lg border border-[#ead8c5] hover:border-[#e2c8a9] transition-colors"
-                                        >
-                                            <Copy size={12} />
-                                            Copy tất cả
-                                        </button>
+                            {/* Scrollable content with tabs */}
+                            <div className="flex-1 flex flex-col overflow-hidden">
+                                {/* Tab Navigation */}
+                                <div className="flex gap-2 px-6 pt-4 border-b border-[#ead8c5]">
+                                    <button
+                                        onClick={() => setDetailTab('emails')}
+                                        className={`px-4 py-3 text-sm font-bold rounded-t-xl transition-all ${detailTab === 'emails'
+                                            ? 'bg-[#fff8ef] text-[#c5532d] border-t border-l border-r border-[#ead8c5]'
+                                            : 'text-[#9c8573] hover:text-[#6b5b52] hover:bg-[#f9efe3]'
+                                            }`}
+                                    >
+                                        📧 Email nhận ({emails.length})
+                                    </button>
+                                    <button
+                                        onClick={() => setDetailTab('addresses')}
+                                        className={`px-4 py-3 text-sm font-bold rounded-t-xl transition-all ${detailTab === 'addresses'
+                                            ? 'bg-[#fff8ef] text-[#c5532d] border-t border-l border-r border-[#ead8c5]'
+                                            : 'text-[#9c8573] hover:text-[#6b5b52] hover:bg-[#f9efe3]'
+                                            }`}
+                                    >
+                                        📋 Địa chỉ email ({addresses.length})
+                                    </button>
+                                </div>
+
+                                {/* Tab Content */}
+                                <div className="flex-1 overflow-auto p-6">
+                                    {detailTab === 'addresses' ? (
+                                        /* Addresses Tab */
+                                        <div className="space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <div className="text-sm font-bold text-[#6b5b52]">
+                                                    Quản lý địa chỉ email trong nhóm
+                                                </div>
+                                                {addresses.length > 0 && (
+                                                    <button
+                                                        onClick={() => {
+                                                            const emailList = addresses.map(a => a.emailAddress).join('\n')
+                                                            navigator.clipboard.writeText(emailList)
+                                                            toast.success(`Đã copy ${addresses.length} địa chỉ email`)
+                                                        }}
+                                                        className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-[#6b5b52] hover:text-[#c5532d] bg-[#fff8ef] hover:bg-[#f6ecdf] rounded-xl border border-[#ead8c5] hover:border-[#e2c8a9] transition-colors"
+                                                    >
+                                                        <Copy size={14} />
+                                                        Copy tất cả
+                                                    </button>
+                                                )}
+                                            </div>
+                                            {addresses.length === 0 ? (
+                                                <div className="py-16 text-center border-2 border-dashed border-[#ead8c5] rounded-2xl bg-[#f8efe4]">
+                                                    <MailIcon size={48} className="mx-auto text-[#e2cdb5] mb-4" />
+                                                    <p className="text-[#9c8573] font-bold">Chưa có địa chỉ email</p>
+                                                    <p className="text-[#b59c8b] text-sm mt-1">Nhấn "Thêm địa chỉ" để bắt đầu</p>
+                                                </div>
+                                            ) : (
+                                                <div className="flex flex-wrap gap-2">
+                                                    {addresses.map((addr, idx) => (
+                                                        <div
+                                                            key={addr.emailAddress || idx}
+                                                            className="flex items-center gap-2 bg-[#fff8ef] px-4 py-2.5 rounded-xl border border-[#ead8c5] hover:border-[#d59b46] transition-colors"
+                                                        >
+                                                            <span className="text-sm font-bold text-[#2a1f1a]">{addr.emailAddress}</span>
+                                                            <button
+                                                                onClick={() => removeEmailFromGroup(addr.emailAddress)}
+                                                                className="text-[#b63b3b] hover:text-[#8f2e2e] p-1 hover:bg-[#f6dede] rounded transition-colors"
+                                                                title="Xóa khỏi nhóm"
+                                                            >
+                                                                <X size={14} />
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        /* Emails Tab */
+                                        <div className="space-y-4">
+                                            {loading ? (
+                                                <div className="py-16 text-center">
+                                                    <RefreshCw className="w-10 h-10 text-[#c5532d] animate-spin mx-auto mb-4" />
+                                                    <p className="text-[#9c8573] font-bold">Đang tải email...</p>
+                                                </div>
+                                            ) : emails.length === 0 ? (
+                                                <div className="py-16 text-center border-2 border-dashed border-[#ead8c5] rounded-2xl bg-[#f8efe4]">
+                                                    <MailIcon size={48} className="mx-auto text-[#e2cdb5] mb-4" />
+                                                    <p className="text-[#9c8573] font-bold">Chưa có email nào</p>
+                                                    <p className="text-[#b59c8b] text-sm mt-1">Email gửi đến các địa chỉ trong nhóm sẽ hiển thị ở đây</p>
+                                                </div>
+                                            ) : (
+                                                <div className="grid gap-4">
+                                                    {emails.map((email, idx) => (
+                                                        <motion.div
+                                                            key={email.id || idx}
+                                                            initial={{ opacity: 0, y: 15 }}
+                                                            animate={{ opacity: 1, y: 0 }}
+                                                            transition={{ delay: idx * 0.02 }}
+                                                            className="group bg-[#f8efe4] p-6 rounded-2xl border border-[#ead8c5] hover:bg-[#fff8ef] hover:shadow-lg hover:shadow-[#c5532d]/10 transition-all cursor-pointer"
+                                                            onClick={() => setSelectedEmail(email)}
+                                                        >
+                                                            <div className="flex flex-col gap-4">
+                                                                <div className="flex items-start justify-between gap-4">
+                                                                    <h4 className="text-lg font-extrabold text-[#2a1f1a] leading-tight group-hover:text-[#c5532d] transition-colors flex-1 font-display">
+                                                                        {email.subject || '(Không có chủ đề)'}
+                                                                    </h4>
+                                                                    <div className="shrink-0 px-3 py-1 bg-[#fff8ef] rounded-xl text-xs font-bold text-[#9c8573] border border-[#ead8c5]">
+                                                                        {new Date(email.receivedAt).toLocaleDateString('vi-VN')}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex flex-wrap gap-4 items-center pt-4 border-t border-[#ead8c5]">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className="w-8 h-8 bg-[#e8f2ed] text-[#1f6a5c] rounded-lg flex items-center justify-center">
+                                                                            <User size={14} />
+                                                                        </div>
+                                                                        <div className="flex flex-col">
+                                                                            <span className="text-[10px] font-black text-[#9c8573] uppercase tracking-widest">Từ</span>
+                                                                            <span className="text-sm font-bold text-[#2a1f1a]">{email.from?.address}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className="w-8 h-8 bg-[#f7e6d4] text-[#c5532d] rounded-lg flex items-center justify-center">
+                                                                            <Send size={14} />
+                                                                        </div>
+                                                                        <div className="flex flex-col">
+                                                                            <span className="text-[10px] font-black text-[#9c8573] uppercase tracking-widest">Đến</span>
+                                                                            <span className="text-sm font-bold text-[#2a1f1a]">{email.to}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </motion.div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
-                                {addresses.length === 0 ? (
-                                    <div className="text-xs text-[#9c8573]">Chưa có địa chỉ. Thêm địa chỉ để bắt đầu.</div>
-                                ) : (
-                                    <div className="flex flex-wrap gap-2">
-                                        {addresses.map((addr, idx) => (
-                                            <div
-                                                key={addr.emailAddress || idx}
-                                                className="flex items-center gap-2 bg-[#fff8ef] px-3 py-2 rounded-xl border border-[#ead8c5]"
-                                            >
-                                                <span className="text-sm font-bold text-[#2a1f1a]">{addr.emailAddress}</span>
-                                                <button
-                                                    onClick={() => removeEmailFromGroup(addr.emailAddress)}
-                                                    className="text-[#b63b3b] hover:text-[#8f2e2e]"
-                                                >
-                                                    <X size={14} />
-                                                </button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Emails */}
-                            <div className="space-y-3">
-                                <div className="flex items-center justify-between">
-                                    <div className="text-xs font-black text-[#6b5b52] uppercase tracking-widest">
-                                        Email nhận ({emails.length})
-                                    </div>
-                                </div>
-                                {loading ? (
-                                    <div className="py-12 text-center">
-                                        <RefreshCw className="w-8 h-8 text-[#c5532d] animate-spin mx-auto mb-3" />
-                                        <p className="text-[#9c8573] font-bold">Đang tải...</p>
-                                    </div>
-                                ) : emails.length === 0 ? (
-                                    <div className="py-16 text-center border-2 border-dashed border-[#ead8c5] rounded-2xl">
-                                        <MailIcon size={48} className="mx-auto text-[#e2cdb5] mb-4" />
-                                        <p className="text-[#9c8573] font-bold">Chưa có email nào</p>
-                                        <p className="text-[#b59c8b] text-sm mt-1">Email gửi đến các địa chỉ trong nhóm sẽ hiển thị ở đây</p>
-                                    </div>
-                                ) : (
-                                    <div className="grid gap-4">
-                                        {emails.map((email, idx) => (
-                                            <motion.div
-                                                key={email.id || idx}
-                                                initial={{ opacity: 0, y: 15 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                transition={{ delay: idx * 0.02 }}
-                                                className="group bg-[#f8efe4] p-6 rounded-2xl border border-[#ead8c5] hover:bg-[#fff8ef] hover:shadow-lg hover:shadow-[#c5532d]/10 transition-all cursor-pointer"
-                                                onClick={() => setSelectedEmail(email)}
-                                            >
-                                                <div className="flex flex-col gap-4">
-                                                    <div className="flex items-start justify-between gap-4">
-                                                        <h4 className="text-lg font-extrabold text-[#2a1f1a] leading-tight group-hover:text-[#c5532d] transition-colors flex-1 font-display">
-                                                            {email.subject || '(Không có chủ đề)'}
-                                                        </h4>
-                                                        <div className="shrink-0 px-3 py-1 bg-[#fff8ef] rounded-xl text-xs font-bold text-[#9c8573] border border-[#ead8c5]">
-                                                            {new Date(email.receivedAt).toLocaleDateString('vi-VN')}
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex flex-wrap gap-4 items-center pt-4 border-t border-[#ead8c5]">
-                                                        <div className="flex items-center gap-2">
-                                                            <div className="w-8 h-8 bg-[#e8f2ed] text-[#1f6a5c] rounded-lg flex items-center justify-center">
-                                                                <User size={14} />
-                                                            </div>
-                                                            <div className="flex flex-col">
-                                                                <span className="text-[10px] font-black text-[#9c8573] uppercase tracking-widest">Từ</span>
-                                                                <span className="text-sm font-bold text-[#2a1f1a]">{email.from?.address}</span>
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex items-center gap-2">
-                                                            <div className="w-8 h-8 bg-[#f7e6d4] text-[#c5532d] rounded-lg flex items-center justify-center">
-                                                                <Send size={14} />
-                                                            </div>
-                                                            <div className="flex flex-col">
-                                                                <span className="text-[10px] font-black text-[#9c8573] uppercase tracking-widest">Đến</span>
-                                                                <span className="text-sm font-bold text-[#2a1f1a]">{email.to}</span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </motion.div>
-                                        ))}
-                                    </div>
-                                )}
                             </div>
                         </>
                     )}
                 </div>
             </div>
+
+
 
             {/* Create Group Modal */}
             <AnimatePresence>
@@ -729,6 +788,6 @@ export default function GroupsTab({ apiKey, activeTab }) {
                     />
                 )}
             </AnimatePresence>
-        </motion.div>
+        </motion.div >
     )
 }

@@ -23,10 +23,11 @@ const patterns = [
     (f, l) => `${f[0]}${f[1] || 'x'}${l}${randNum(99)}`
 ];
 
-export const generateRandomEmail = (env) => {
+export const generateRandomEmail = async (env) => {
     const first = pick(firstNames);
     const last = pick(lastNames);
     const username = pick(patterns)(first, last);
-    const { EMAIL_DOMAIN } = getConfig(env);
+    const config = await getConfig(env);
+    const { EMAIL_DOMAIN } = config?.EMAIL_DOMAIN || '';
     return `${username}@${EMAIL_DOMAIN}`;
 };

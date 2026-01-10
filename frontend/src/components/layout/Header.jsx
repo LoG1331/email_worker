@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Mail, LogOut, Bot, Check, X, Loader2 } from 'lucide-react'
+import { Mail, LogOut, Bot, Check, X, Loader2, Settings } from 'lucide-react'
 import toast from 'react-hot-toast'
 
-export default function Header({ onLogout, showLogout, apiKey }) {
+export default function Header({ onLogout, showLogout, apiKey, onOpenSettings }) {
     const [setupLoading, setSetupLoading] = useState(false)
     const [setupResult, setSetupResult] = useState(null)
 
@@ -64,10 +64,10 @@ export default function Header({ onLogout, showLogout, apiKey }) {
                         onClick={handleSetupTelegram}
                         disabled={setupLoading}
                         className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${setupResult === true
-                                ? 'bg-[#def3e6] text-[#1f6a5c] border border-[#bfe1cd]'
-                                : setupResult === false
-                                    ? 'bg-[#f8d9d9] text-[#b63b3b] border border-[#f0bcbc]'
-                                    : 'bg-[#efe1d2] border border-[#e4cbb0] text-[#6b5b52] hover:bg-[#f6e9dc]'
+                            ? 'bg-[#def3e6] text-[#1f6a5c] border border-[#bfe1cd]'
+                            : setupResult === false
+                                ? 'bg-[#f8d9d9] text-[#b63b3b] border border-[#f0bcbc]'
+                                : 'bg-[#efe1d2] border border-[#e4cbb0] text-[#6b5b52] hover:bg-[#f6e9dc]'
                             }`}
                     >
                         {setupLoading ? (
@@ -80,6 +80,16 @@ export default function Header({ onLogout, showLogout, apiKey }) {
                             <Bot size={16} />
                         )}
                         <span className="hidden sm:inline">Setup Bot</span>
+                    </motion.button>
+
+                    <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={onOpenSettings}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-[#efe1d2] border border-[#e4cbb0] text-[#6b5b52] hover:bg-[#f6e9dc] rounded-xl text-sm font-bold transition-all duration-300"
+                    >
+                        <Settings size={16} />
+                        <span className="hidden sm:inline">Cấu hình</span>
                     </motion.button>
 
                     <motion.button
