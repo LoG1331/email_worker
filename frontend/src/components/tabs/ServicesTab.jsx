@@ -75,13 +75,13 @@ export default function ServicesTab({ apiKey, allServices, setAllServices }) {
     return (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-10 pb-20">
             {/* Search */}
-            <div className="flex flex-col sm:flex-row gap-5 items-center bg-white p-4 rounded-3xl shadow-sm border border-slate-100">
+            <div className="flex flex-col sm:flex-row gap-5 items-center p-4 rounded-3xl surface-panel">
                 <div className="relative flex-1 w-full">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#9c8573]" size={18} />
                     <input
                         type="text"
                         placeholder="Tìm kiếm dịch vụ..."
-                        className="w-full pl-12 pr-4 py-3 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-blue-100 outline-none text-sm font-medium"
+                        className="w-full pl-12 pr-4 py-3 bg-[#fffdf8] border border-transparent rounded-2xl focus:ring-2 focus:ring-[#d59b46]/30 focus:border-[#d59b46] outline-none text-sm font-medium"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                     />
@@ -95,12 +95,12 @@ export default function ServicesTab({ apiKey, allServices, setAllServices }) {
             {/* Stats */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 {[
-                    { label: 'Tổng số dịch vụ', value: allServices.length, bg: 'bg-indigo-600', text: 'text-white' },
-                    { label: 'Tổng emails tracked', value: totalEmails, bg: 'bg-white', text: 'text-slate-900 border border-slate-100' },
+                    { label: 'Tổng số dịch vụ', value: allServices.length, bg: 'bg-[#1f6a5c]', text: 'text-white' },
+                    { label: 'Tổng emails tracked', value: totalEmails, bg: 'bg-[#fff8ef]', text: 'text-ink border border-[#ead8c5]' },
                 ].map((stat, i) => (
                     <div key={i} className={`${stat.bg} ${stat.text} p-8 rounded-[2.5rem] shadow-sm transform transition-transform hover:-translate-y-1`}>
                         <div className="text-sm font-black uppercase tracking-widest opacity-70 mb-2">{stat.label}</div>
-                        <div className={`text-4xl font-black`}>{stat.value}</div>
+                        <div className={`text-4xl font-black font-display`}>{stat.value}</div>
                     </div>
                 ))}
             </div>
@@ -109,13 +109,13 @@ export default function ServicesTab({ apiKey, allServices, setAllServices }) {
             <div className="space-y-4">
                 {loading && allServices.length === 0 ? (
                     <div className="py-20 text-center">
-                        <RefreshCw className="w-10 h-10 text-indigo-600 animate-spin mx-auto mb-4" />
-                        <p className="text-slate-500 font-bold">Đang tải dữ liệu...</p>
+                        <RefreshCw className="w-10 h-10 text-[#1f6a5c] animate-spin mx-auto mb-4" />
+                        <p className="text-[#6b5b52] font-bold">Đang tải dữ liệu...</p>
                     </div>
                 ) : filteredServices.length === 0 ? (
-                    <div className="bg-white py-24 rounded-[3rem] text-center border-2 border-dashed border-slate-200">
-                        <Building2 size={64} className="mx-auto text-slate-200 mb-6" />
-                        <p className="text-slate-400 font-bold text-lg">Không có dịch vụ nào</p>
+                    <div className="surface-soft py-24 rounded-[3rem] text-center">
+                        <Building2 size={64} className="mx-auto text-[#e2cdb5] mb-6" />
+                        <p className="text-[#9c8573] font-bold text-lg">Không có dịch vụ nào</p>
                     </div>
                 ) : (
                     <div className="grid gap-6">
@@ -126,26 +126,26 @@ export default function ServicesTab({ apiKey, allServices, setAllServices }) {
                                     initial={{ opacity: 0, y: 15 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     transition={{ delay: idx * 0.02 }}
-                                    className="group bg-white p-8 rounded-[2rem] border border-slate-50 shadow-sm hover:shadow-xl hover:shadow-indigo-900/5 transition-all relative overflow-hidden"
+                                    className="group p-8 rounded-[2rem] border border-[#ead8c5] shadow-sm hover:shadow-xl hover:shadow-[#1f6a5c]/10 transition-all relative overflow-hidden surface-panel"
                                 >
                                     <div className="flex items-center gap-6">
-                                        <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shrink-0">
+                                        <div className="w-14 h-14 bg-[#e8f2ed] text-[#1f6a5c] rounded-2xl flex items-center justify-center shrink-0">
                                             <Building2 size={24} />
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <h3 className="text-xl font-extrabold text-slate-800 group-hover:text-indigo-600 transition-colors truncate">
+                                            <h3 className="text-xl font-extrabold text-[#2a1f1a] group-hover:text-[#1f6a5c] transition-colors truncate font-display">
                                                 {service.service}
                                             </h3>
-                                            <div className="flex items-center gap-4 mt-1 text-sm font-bold text-slate-400">
-                                                <span className="text-indigo-500">{service.uniqueEmails} địa chỉ email</span>
-                                                <span className="w-1 h-1 bg-slate-300 rounded-full" />
+                                            <div className="flex items-center gap-4 mt-1 text-sm font-bold text-[#9c8573]">
+                                                <span className="text-[#c5532d]">{service.uniqueEmails} địa chỉ email</span>
+                                                <span className="w-1 h-1 bg-[#d5c2ad] rounded-full" />
                                                 <span>{service.totalEmails} tin nhắn</span>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-3 shrink-0">
                                             <button
                                                 onClick={() => setSelectedService(service)}
-                                                className="h-12 px-6 rounded-2xl bg-indigo-50 hover:bg-indigo-100 text-indigo-600 font-bold flex items-center gap-2 transition-colors"
+                                                className="h-12 px-6 rounded-2xl bg-[#f1e3d4] hover:bg-[#f6ecdf] text-[#6b5b52] font-bold flex items-center gap-2 transition-colors"
                                             >
                                                 <Eye size={18} />
                                                 <span className="hidden sm:inline">Chi tiết</span>
@@ -156,7 +156,7 @@ export default function ServicesTab({ apiKey, allServices, setAllServices }) {
                                                     handleDeleteService(service.service)
                                                 }}
                                                 disabled={deletingService === service.service}
-                                                className="w-12 h-12 rounded-2xl bg-red-50 hover:bg-red-100 text-red-600 flex items-center justify-center transition-colors disabled:opacity-50"
+                                                className="w-12 h-12 rounded-2xl bg-[#f6dede] hover:bg-[#f2cfcf] text-[#b63b3b] flex items-center justify-center transition-colors disabled:opacity-50"
                                             >
                                                 {deletingService === service.service ? (
                                                     <RefreshCw size={18} className="animate-spin" />

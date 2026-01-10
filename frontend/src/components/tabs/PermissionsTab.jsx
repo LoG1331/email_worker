@@ -121,13 +121,13 @@ export default function PermissionsTab({ apiKey }) {
                             key={s.id}
                             onClick={() => setActiveSection(s.id)}
                             className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${activeSection === s.id
-                                    ? 'bg-slate-900 text-white'
-                                    : 'bg-white text-slate-600 hover:bg-slate-50'
+                                    ? 'bg-[#2a1f1a] text-white'
+                                    : 'bg-[#fff8ef] text-[#6b5b52] hover:bg-[#f6ecdf]'
                                 }`}
                         >
                             {s.label}
                             {s.count > 0 && (
-                                <span className={`ml-2 px-2 py-0.5 rounded-lg text-xs ${activeSection === s.id ? 'bg-white/20' : 'bg-slate-100'
+                                <span className={`ml-2 px-2 py-0.5 rounded-lg text-xs ${activeSection === s.id ? 'bg-white/20' : 'bg-[#f1e3d4]'
                                     }`}>{s.count}</span>
                             )}
                         </button>
@@ -143,9 +143,9 @@ export default function PermissionsTab({ apiKey }) {
             {activeSection === 'pending' && (
                 <div className="space-y-4">
                     {pending.length === 0 ? (
-                        <div className="bg-white py-16 rounded-3xl text-center border-2 border-dashed border-slate-200">
-                            <Check size={48} className="mx-auto text-green-400 mb-4" />
-                            <p className="text-slate-400 font-bold">Không có yêu cầu đang chờ</p>
+                        <div className="surface-soft py-16 rounded-3xl text-center">
+                            <Check size={48} className="mx-auto text-[#1f6a5c] mb-4" />
+                            <p className="text-[#9c8573] font-bold">Không có yêu cầu đang chờ</p>
                         </div>
                     ) : (
                         <AnimatePresence>
@@ -155,19 +155,19 @@ export default function PermissionsTab({ apiKey }) {
                                     initial={{ opacity: 0, y: 10 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     transition={{ delay: idx * 0.05 }}
-                                    className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm"
+                                    className="p-6 rounded-2xl surface-panel"
                                 >
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-4">
-                                            <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center">
+                                            <div className="w-12 h-12 bg-[#f7e6d4] text-[#c5532d] rounded-xl flex items-center justify-center">
                                                 <User size={24} />
                                             </div>
                                             <div>
-                                                <div className="font-bold text-slate-800">
+                                                <div className="font-bold text-[#2a1f1a]">
                                                     {req.user?.firstName} {req.user?.lastName}
-                                                    {req.user?.username && <span className="text-slate-400 ml-2">@{req.user.username}</span>}
+                                                    {req.user?.username && <span className="text-[#9c8573] ml-2">@{req.user.username}</span>}
                                                 </div>
-                                                <div className="text-sm text-slate-500 flex items-center gap-2">
+                                                <div className="text-sm text-[#6b5b52] flex items-center gap-2">
                                                     <Mail size={14} />
                                                     <span className="font-mono">{req.email}@...</span>
                                                 </div>
@@ -176,19 +176,19 @@ export default function PermissionsTab({ apiKey }) {
                                         <div className="flex gap-2">
                                             <button
                                                 onClick={() => handleApprove(req.id, 'DOMAIN')}
-                                                className="px-4 py-2 bg-green-500 text-white rounded-xl text-sm font-bold hover:bg-green-600 flex items-center gap-2"
+                                                className="px-4 py-2 bg-[#1f6a5c] text-white rounded-xl text-sm font-bold hover:bg-[#1b5d52] flex items-center gap-2"
                                             >
                                                 <Globe size={16} /> Full Domain
                                             </button>
                                             <button
                                                 onClick={() => handleApprove(req.id, 'EMAIL')}
-                                                className="px-4 py-2 bg-blue-500 text-white rounded-xl text-sm font-bold hover:bg-blue-600 flex items-center gap-2"
+                                                className="px-4 py-2 bg-[#c5532d] text-white rounded-xl text-sm font-bold hover:bg-[#b94927] flex items-center gap-2"
                                             >
                                                 <AtSign size={16} /> Chỉ Email
                                             </button>
                                             <button
                                                 onClick={() => handleReject(req.id)}
-                                                className="px-4 py-2 bg-red-100 text-red-600 rounded-xl text-sm font-bold hover:bg-red-200"
+                                                className="px-4 py-2 bg-[#f6dede] text-[#b63b3b] rounded-xl text-sm font-bold hover:bg-[#f2cfcf]"
                                             >
                                                 <X size={16} />
                                             </button>
@@ -205,9 +205,9 @@ export default function PermissionsTab({ apiKey }) {
             {activeSection === 'users' && (
                 <div className="space-y-3">
                     {users.length === 0 ? (
-                        <div className="bg-white py-16 rounded-3xl text-center border-2 border-dashed border-slate-200">
-                            <User size={48} className="mx-auto text-slate-300 mb-4" />
-                            <p className="text-slate-400 font-bold">Chưa có user nào</p>
+                        <div className="surface-soft py-16 rounded-3xl text-center">
+                            <User size={48} className="mx-auto text-[#d5c2ad] mb-4" />
+                            <p className="text-[#9c8573] font-bold">Chưa có user nào</p>
                         </div>
                     ) : (
                         <AnimatePresence>
@@ -222,27 +222,27 @@ export default function PermissionsTab({ apiKey }) {
                                         initial={{ opacity: 0, y: 10 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         transition={{ delay: idx * 0.03 }}
-                                        className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden"
+                                        className="rounded-2xl border border-[#ead8c5] shadow-sm overflow-hidden surface-panel"
                                     >
                                         {/* Preview Row */}
                                         <div
                                             onClick={() => setExpandedUser(isExpanded ? null : user.userId)}
-                                            className="p-5 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors"
+                                            className="p-5 flex items-center justify-between cursor-pointer hover:bg-[#f6ecdf] transition-colors"
                                         >
                                             <div className="flex items-center gap-4">
-                                                <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${hasDomain ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'
+                                                <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${hasDomain ? 'bg-[#def3e6] text-[#1f6a5c]' : 'bg-[#f7e6d4] text-[#c5532d]'
                                                     }`}>
                                                     {hasDomain ? <Globe size={22} /> : <User size={22} />}
                                                 </div>
                                                 <div>
-                                                    <div className="font-bold text-slate-800 flex items-center gap-2">
+                                                    <div className="font-bold text-[#2a1f1a] flex items-center gap-2">
                                                         {user.firstName} {user.lastName}
-                                                        {user.username && <span className="text-slate-400 text-sm">@{user.username}</span>}
+                                                        {user.username && <span className="text-[#9c8573] text-sm">@{user.username}</span>}
                                                         {hasDomain && (
-                                                            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-bold rounded-lg">FULL</span>
+                                                            <span className="px-2 py-0.5 bg-[#def3e6] text-[#1f6a5c] text-xs font-bold rounded-lg">FULL</span>
                                                         )}
                                                     </div>
-                                                    <div className="text-sm text-slate-500">
+                                                    <div className="text-sm text-[#6b5b52]">
                                                         {user.emails?.length || 0} email • {userPerms.length} quyền
                                                     </div>
                                                 </div>
@@ -251,12 +251,12 @@ export default function PermissionsTab({ apiKey }) {
                                                 {!hasDomain && (
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); handleGrantDomain(user.userId); }}
-                                                        className="px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-xs font-bold hover:bg-green-200"
+                                                        className="px-3 py-1.5 bg-[#def3e6] text-[#1f6a5c] rounded-lg text-xs font-bold hover:bg-[#cbe8d8]"
                                                     >
                                                         + Full Domain
                                                     </button>
                                                 )}
-                                                {isExpanded ? <ChevronUp size={20} className="text-slate-400" /> : <ChevronDown size={20} className="text-slate-400" />}
+                                                {isExpanded ? <ChevronUp size={20} className="text-[#9c8573]" /> : <ChevronDown size={20} className="text-[#9c8573]" />}
                                             </div>
                                         </div>
 
@@ -268,29 +268,29 @@ export default function PermissionsTab({ apiKey }) {
                                                     animate={{ height: 'auto', opacity: 1 }}
                                                     exit={{ height: 0, opacity: 0 }}
                                                     transition={{ duration: 0.2 }}
-                                                    className="border-t border-slate-100 bg-slate-50/50"
+                                                    className="border-t border-[#ead8c5] bg-[#f8efe4]"
                                                 >
                                                     <div className="p-5 space-y-4">
                                                         {/* Permissions */}
                                                         {userPerms.length > 0 && (
                                                             <div>
-                                                                <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Quyền</div>
+                                                                <div className="text-xs font-bold text-[#9c8573] uppercase tracking-widest mb-3">Quyền</div>
                                                                 <div className="space-y-2">
                                                                     {userPerms.map((perm, i) => (
-                                                                        <div key={i} className="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-100">
+                                                                        <div key={i} className="flex items-center justify-between bg-[#fff8ef] p-3 rounded-xl border border-[#ead8c5]">
                                                                             <div className="flex items-center gap-3">
                                                                                 {perm.type === 'DOMAIN' ? (
-                                                                                    <Globe size={16} className="text-green-600" />
+                                                                                    <Globe size={16} className="text-[#1f6a5c]" />
                                                                                 ) : (
-                                                                                    <AtSign size={16} className="text-blue-600" />
+                                                                                    <AtSign size={16} className="text-[#c5532d]" />
                                                                                 )}
-                                                                                <span className="text-sm font-medium text-slate-700">
+                                                                                <span className="text-sm font-medium text-[#2a1f1a]">
                                                                                     {perm.type === 'DOMAIN' ? 'Full Domain' : perm.target}
                                                                                 </span>
                                                                             </div>
                                                                             <button
                                                                                 onClick={() => handleRevoke(user.userId, perm.type, perm.target)}
-                                                                                className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                                                className="p-2 text-[#b63b3b] hover:bg-[#f6dede] rounded-lg transition-colors"
                                                                             >
                                                                                 <Trash2 size={16} />
                                                                             </button>
@@ -303,10 +303,10 @@ export default function PermissionsTab({ apiKey }) {
                                                         {/* Emails */}
                                                         {user.emails?.length > 0 && (
                                                             <div>
-                                                                <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Emails đã tạo</div>
+                                                                <div className="text-xs font-bold text-[#9c8573] uppercase tracking-widest mb-3">Emails đã tạo</div>
                                                                 <div className="flex flex-wrap gap-2">
                                                                     {user.emails.map((email, i) => (
-                                                                        <span key={i} className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm font-mono text-slate-600">
+                                                                        <span key={i} className="px-3 py-1.5 bg-[#fff8ef] border border-[#ead8c5] rounded-lg text-sm font-mono text-[#6b5b52]">
                                                                             {email}
                                                                         </span>
                                                                     ))}
@@ -315,7 +315,7 @@ export default function PermissionsTab({ apiKey }) {
                                                         )}
 
                                                         {userPerms.length === 0 && (!user.emails || user.emails.length === 0) && (
-                                                            <p className="text-sm text-slate-400 text-center py-4">Chưa có dữ liệu</p>
+                                                            <p className="text-sm text-[#9c8573] text-center py-4">Chưa có dữ liệu</p>
                                                         )}
                                                     </div>
                                                 </motion.div>

@@ -21,6 +21,7 @@ export class InboxDB {
             );
             CREATE INDEX IF NOT EXISTS idx_received_at ON emails(received_at DESC);
             CREATE INDEX IF NOT EXISTS idx_email_to ON emails(email_to);
+            CREATE INDEX IF NOT EXISTS idx_email_to_received_at ON emails(email_to, received_at DESC);
         `);
         this.initialized = true;
     }

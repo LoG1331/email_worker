@@ -68,20 +68,20 @@ export default function ServiceDetailModal({ service, onClose, apiKey, onEmailDe
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.95, opacity: 0 }}
-                className="bg-white rounded-[2.5rem] shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-hidden"
+                className="bg-[#fff8ef] rounded-[2.5rem] shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-hidden border border-[#ead8c5]"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Header */}
-                <div className="p-8 border-b border-slate-100 flex items-center justify-between">
+                <div className="p-8 border-b border-[#ead8c5] flex items-center justify-between">
                     <div>
-                        <h2 className="text-2xl font-black text-slate-800">Chi tiết dịch vụ</h2>
-                        <p className="text-sm font-bold text-indigo-600 mt-1">{service.service}</p>
+                        <h2 className="text-2xl font-black text-[#2a1f1a] font-display">Chi tiết dịch vụ</h2>
+                        <p className="text-sm font-bold text-[#c5532d] mt-1">{service.service}</p>
                     </div>
                     <button
                         onClick={onClose}
-                        className="w-12 h-12 rounded-2xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors"
+                        className="w-12 h-12 rounded-2xl bg-[#f1e3d4] hover:bg-[#e8d4be] flex items-center justify-center transition-colors"
                     >
-                        <X size={20} className="text-slate-600" />
+                        <X size={20} className="text-[#6b5b52]" />
                     </button>
                 </div>
 
@@ -89,13 +89,13 @@ export default function ServiceDetailModal({ service, onClose, apiKey, onEmailDe
                 <div className="p-8 overflow-y-auto max-h-[calc(80vh-200px)]">
                     {loading ? (
                         <div className="py-20 text-center">
-                            <RefreshCw className="w-10 h-10 text-indigo-600 animate-spin mx-auto mb-4" />
-                            <p className="text-slate-500 font-bold">Đang tải...</p>
+                            <RefreshCw className="w-10 h-10 text-[#1f6a5c] animate-spin mx-auto mb-4" />
+                            <p className="text-[#6b5b52] font-bold">Đang tải...</p>
                         </div>
                     ) : emails.length === 0 ? (
                         <div className="py-20 text-center">
-                            <Mail size={64} className="mx-auto text-slate-200 mb-6" />
-                            <p className="text-slate-400 font-bold text-lg">Không có email nào</p>
+                            <Mail size={64} className="mx-auto text-[#e2cdb5] mb-6" />
+                            <p className="text-[#9c8573] font-bold text-lg">Không có email nào</p>
                         </div>
                     ) : (
                         <div className="space-y-4">
@@ -105,25 +105,25 @@ export default function ServiceDetailModal({ service, onClose, apiKey, onEmailDe
                                     initial={{ opacity: 0, y: 10 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     transition={{ delay: idx * 0.03 }}
-                                    className="bg-slate-50 p-6 rounded-2xl border border-slate-100 hover:shadow-md transition-shadow"
+                                    className="bg-[#f8efe4] p-6 rounded-2xl border border-[#ead8c5] hover:shadow-md transition-shadow"
                                 >
                                     <div className="flex items-center justify-between gap-4">
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-3 mb-3">
-                                                <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center shrink-0">
+                                                <div className="w-10 h-10 bg-[#e8f2ed] text-[#1f6a5c] rounded-xl flex items-center justify-center shrink-0">
                                                     <Mail size={18} />
                                                 </div>
-                                                <h3 className="text-lg font-bold text-slate-800 truncate">
+                                                <h3 className="text-lg font-bold text-[#2a1f1a] truncate font-display">
                                                     {emailItem.email}
                                                 </h3>
                                             </div>
                                             <div className="flex flex-wrap gap-4 text-sm">
-                                                <div className="flex items-center gap-2 text-slate-600">
-                                                    <Hash size={14} className="text-slate-400" />
+                                                <div className="flex items-center gap-2 text-[#6b5b52]">
+                                                    <Hash size={14} className="text-[#9c8573]" />
                                                     <span className="font-bold">{emailItem.emailCount} tin nhắn</span>
                                                 </div>
-                                                <div className="flex items-center gap-2 text-slate-600">
-                                                    <Calendar size={14} className="text-slate-400" />
+                                                <div className="flex items-center gap-2 text-[#6b5b52]">
+                                                    <Calendar size={14} className="text-[#9c8573]" />
                                                     <span className="font-medium">
                                                         {new Date(emailItem.firstSeen).toLocaleDateString('vi-VN')}
                                                         {' → '}
@@ -135,7 +135,7 @@ export default function ServiceDetailModal({ service, onClose, apiKey, onEmailDe
                                         <button
                                             onClick={() => handleDeleteEmail(emailItem.email)}
                                             disabled={deletingEmail === emailItem.email}
-                                            className="shrink-0 w-12 h-12 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 flex items-center justify-center transition-colors disabled:opacity-50"
+                                            className="shrink-0 w-12 h-12 rounded-xl bg-[#f6dede] hover:bg-[#f2cfcf] text-[#b63b3b] flex items-center justify-center transition-colors disabled:opacity-50"
                                         >
                                             {deletingEmail === emailItem.email ? (
                                                 <RefreshCw size={18} className="animate-spin" />
@@ -151,10 +151,10 @@ export default function ServiceDetailModal({ service, onClose, apiKey, onEmailDe
                 </div>
 
                 {/* Footer */}
-                <div className="p-8 border-t border-slate-100 bg-slate-50">
+                <div className="p-8 border-t border-[#ead8c5] bg-[#f8efe4]">
                     <div className="flex items-center justify-between">
-                        <p className="text-sm font-bold text-slate-600">
-                            Tổng số: <span className="text-indigo-600">{emails.length} email</span>
+                        <p className="text-sm font-bold text-[#6b5b52]">
+                            Tổng số: <span className="text-[#c5532d]">{emails.length} email</span>
                         </p>
                         <button
                             onClick={loadEmails}

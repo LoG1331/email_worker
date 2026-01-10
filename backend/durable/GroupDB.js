@@ -27,6 +27,7 @@ export class GroupDB {
             
             CREATE INDEX IF NOT EXISTS idx_group_emails_group ON group_emails(group_id);
             CREATE INDEX IF NOT EXISTS idx_group_emails_email ON group_emails(email_address);
+            CREATE INDEX IF NOT EXISTS idx_group_emails_group_added_at ON group_emails(group_id, added_at DESC);
         `);
         this.initialized = true;
     }

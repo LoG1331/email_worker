@@ -4,7 +4,10 @@ import { Star } from 'lucide-react'
 export default function GroupSelector({
     emailAddress,
     apiKey,
-    onGroupToggle
+    onGroupToggle,
+    idKey,
+    activeKey,
+    setActiveKey
 }) {
     const [showDropdown, setShowDropdown] = useState(false)
     const [groups, setGroups] = useState([])
@@ -16,17 +19,26 @@ export default function GroupSelector({
         const handleClickOutside = (e) => {
             if (showDropdown) {
                 setShowDropdown(false)
+                setActiveKey?.(null)
             }
         }
         document.addEventListener('click', handleClickOutside)
         return () => document.removeEventListener('click', handleClickOutside)
-    }, [showDropdown])
+    }, [showDropdown, setActiveKey])
 
     useEffect(() => {
         if (apiKey) {
             loadGroups()
         }
     }, [apiKey])
+
+    // Close if another dropdown is opened
+    useEffect(() => {
+        const key = idKey || emailAddress
+        if (activeKey && activeKey !== key) {
+            setShowDropdown(false)
+        }
+    }, [activeKey, emailAddress, idKey])
 
     const loadGroups = async () => {
         try {
@@ -58,17 +70,20 @@ export default function GroupSelector({
 
     const toggleDropdown = async (e) => {
         e.stopPropagation()
+        const key = idKey || emailAddress
         if (showDropdown) {
             setShowDropdown(false)
+            setActiveKey?.(null)
         } else {
             // Calculate position
             if (buttonRef.current) {
                 const rect = buttonRef.current.getBoundingClientRect()
                 setDropdownPosition({
-                    top: rect.bottom + 8,
-                    left: rect.left
+                    top: rect.bottom + 10,
+                    left: rect.left - 8
                 })
             }
+            setActiveKey?.(key)
             setShowDropdown(true)
             await loadEmailGroups()
         }
@@ -115,41 +130,43 @@ export default function GroupSelector({
             <button
                 ref={buttonRef}
                 onClick={toggleDropdown}
-                className="text-amber-400 hover:text-amber-500 transition-colors"
+                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#fff8ef] border border-[#ead8c5] text-[#c5532d] hover:border-[#d59b46] hover:shadow-sm transition-all"
                 title="Chọn nhóm"
             >
                 <Star
-                    size={14}
+                    size={16}
                     fill={emailGroups.length > 0 ? "currentColor" : "none"}
                 />
+                <span className="text-xs font-bold text-[#6b5b52]">Chọn nhóm</span>
             </button>
 
             {/* Group Dropdown - Fixed positioning */}
             {showDropdown && (
                 <div
-                    className="fixed bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 z-[9999] min-w-[250px] max-h-[400px] overflow-y-auto"
+                    className="fixed bg-[#fff8ef] rounded-2xl shadow-2xl border border-[#ead8c5] p-5 z-[9999] min-w-[280px] max-h-[420px] overflow-y-auto"
                     style={{
                         top: `${dropdownPosition.top}px`,
                         left: `${dropdownPosition.left}px`
                     }}
                     onClick={(e) => e.stopPropagation()}
                 >
-                    <div className="flex items-center justify-between mb-3">
-                        <div className="text-xs font-black text-slate-600 uppercase tracking-wider">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="text-xs font-black text-[#6b5b52] uppercase tracking-wider">
                             Chọn nhóm
                         </div>
                         <button
                             onClick={(e) => {
                                 e.stopPropagation()
                                 setShowDropdown(false)
+                                setActiveKey?.(null)
                             }}
-                            className="text-slate-400 hover:text-slate-600"
+                            className="text-[#9c8573] hover:text-[#6b5b52]"
                         >
                             ✕
                         </button>
                     </div>
                     {(!groups || !Array.isArray(groups) || groups.length === 0) ? (
-                        <div className="text-xs text-slate-400 py-2">
+                        <div className="text-xs text-[#9c8573] py-2">
                             Chưa có nhóm nào. Vào tab "Nhóm Email" để tạo nhóm.
                         </div>
                     ) : (
@@ -159,19 +176,19 @@ export default function GroupSelector({
                                 return (
                                     <label
                                         key={group.id}
-                                        className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-2 rounded-lg transition-colors"
+                                        className="flex items-center gap-3 cursor-pointer hover:bg-[#f6ecdf] p-3 rounded-xl transition-colors"
                                     >
                                         <input
                                             type="checkbox"
                                             checked={isInGroup}
                                             onChange={() => toggleEmailInGroup(group.id, isInGroup)}
-                                            className="w-4 h-4 rounded border-slate-300 text-blue-600"
+                                            className="w-5 h-5 rounded border-[#cdb8a3] text-[#c5532d]"
                                         />
                                         <div
                                             className="w-3 h-3 rounded-full"
                                             style={{ backgroundColor: group.color }}
                                         />
-                                        <span className="text-sm font-medium text-slate-700">
+                                        <span className="text-sm font-bold text-[#2a1f1a]">
                                             {group.name}
                                         </span>
                                     </label>

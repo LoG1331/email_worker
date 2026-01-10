@@ -16,6 +16,9 @@ export default function EmailsTab({ apiKey, allEmails, setAllEmails }) {
     const [selectedEmailIds, setSelectedEmailIds] = useState([])
     const [deleting, setDeleting] = useState(false)
     const emailsPerPage = 100
+    const [polling, setPolling] = useState(false)
+    const [pollInterval, setPollInterval] = useState(30000)
+    const [activeGroupSelector, setActiveGroupSelector] = useState(null)
 
     useEffect(() => {
         if (apiKey) {
@@ -36,8 +39,17 @@ export default function EmailsTab({ apiKey, allEmails, setAllEmails }) {
         )
     }, [searchQuery, allEmails])
 
-    const loadEmails = async () => {
-        setLoading(true)
+    // Auto-reload emails when toggled on
+    useEffect(() => {
+        if (!apiKey || !polling || pollInterval <= 0) return
+        const id = setInterval(() => {
+            loadEmails({ silent: true })
+        }, pollInterval)
+        return () => clearInterval(id)
+    }, [apiKey, polling, pollInterval, currentPage])
+
+    const loadEmails = async ({ silent = false } = {}) => {
+        if (!silent) setLoading(true)
         try {
             const offset = (currentPage - 1) * emailsPerPage
             const response = await fetch(`/api/all?limit=${emailsPerPage}&offset=${offset}`, {
@@ -47,12 +59,12 @@ export default function EmailsTab({ apiKey, allEmails, setAllEmails }) {
                 const data = await response.json()
                 setAllEmails(data.emails || [])
                 setTotalEmails(data.total || 0)
-                toast.success(`Đã tải ${data.emails?.length || 0} emails (Trang ${currentPage})`)
+                if (!silent) toast.success(`Đã tải ${data.emails?.length || 0} emails (Trang ${currentPage})`)
             }
         } catch {
-            toast.error('Lỗi kết nối')
+            if (!silent) toast.error('Lỗi kết nối')
         } finally {
-            setLoading(false)
+            if (!silent) setLoading(false)
         }
     }
 
@@ -102,18 +114,18 @@ export default function EmailsTab({ apiKey, allEmails, setAllEmails }) {
     return (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-10 pb-20">
             {/* Search */}
-            <div className="flex flex-col sm:flex-row gap-5 items-center bg-white p-4 rounded-3xl shadow-sm border border-slate-100">
+            <div className="flex flex-col sm:flex-row gap-5 items-center p-4 rounded-3xl surface-panel">
                 <div className="relative flex-1 w-full">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#9c8573]" size={18} />
                     <input
                         type="text"
                         placeholder="Tìm kiếm nội dung, người gửi..."
-                        className="w-full pl-12 pr-4 py-3 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-blue-100 outline-none text-sm font-medium"
+                        className="w-full pl-12 pr-4 py-3 bg-[#fffdf8] border border-transparent rounded-2xl focus:ring-2 focus:ring-[#d59b46]/30 focus:border-[#d59b46] outline-none text-sm font-medium"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                     />
                 </div>
-                <div className="flex gap-3">
+                <div className="flex gap-3 items-center">
                     {selectedEmailIds.length > 0 && (
                         <button
                             onClick={deleteSelectedEmails}
@@ -124,33 +136,58 @@ export default function EmailsTab({ apiKey, allEmails, setAllEmails }) {
                             Xóa ({selectedEmailIds.length})
                         </button>
                     )}
-                    <button onClick={loadEmails} disabled={loading} className="btn-primary h-12 px-8 flex items-center gap-3">
+                    <button onClick={() => loadEmails()} disabled={loading} className="btn-primary h-12 px-8 flex items-center gap-3">
                         <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
                         Làm mới
                     </button>
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#6b5b52] bg-[#fffdf8] border border-[#ead8c5] rounded-xl px-3 py-2">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <input
+                                type="checkbox"
+                                checked={polling}
+                                onChange={(e) => {
+                                    const checked = e.target.checked
+                                    setPolling(checked)
+                                    if (checked && pollInterval === 0) setPollInterval(30000)
+                                }}
+                                className="w-4 h-4 rounded border-[#cdb8a3] text-[#c5532d] focus:ring-2 focus:ring-[#d59b46]/40"
+                            />
+                            Auto reload
+                        </label>
+                        <select
+                            value={pollInterval}
+                            onChange={(e) => setPollInterval(Number(e.target.value))}
+                            className="bg-transparent border-none text-[#2a1f1a] text-xs font-bold focus:outline-none"
+                            disabled={!polling}
+                        >
+                            <option value={15000}>15s</option>
+                            <option value={30000}>30s</option>
+                            <option value={60000}>1 phút</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 
             {/* Stats */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
                 {[
-                    { label: 'Tổng Email hệ thống', value: totalEmails, bg: 'bg-blue-600', text: 'text-white' },
-                    { label: 'Email hiển thị', value: allEmails.length, bg: 'bg-indigo-600', text: 'text-white' },
-                    { label: 'Kết quả tìm kiếm', value: filteredEmails.length, bg: 'bg-white', text: 'text-slate-900 border border-slate-200' },
+                    { label: 'Tổng Email hệ thống', value: totalEmails, bg: 'bg-[#1f6a5c]', text: 'text-white' },
+                    { label: 'Email hiển thị', value: allEmails.length, bg: 'bg-[#c5532d]', text: 'text-white' },
+                    { label: 'Kết quả tìm kiếm', value: filteredEmails.length, bg: 'bg-[#fff8ef]', text: 'text-ink border border-[#ead8c5]' },
                 ].map((stat, i) => (
                     <div key={i} className={`${stat.bg} ${stat.text} p-8 rounded-[2.5rem] shadow-sm transform transition-transform hover:-translate-y-1`}>
                         <div className="text-sm font-black uppercase tracking-widest opacity-70 mb-2">{stat.label}</div>
-                        <div className={`text-4xl font-black`}>{stat.value}</div>
+                        <div className={`text-4xl font-black font-display`}>{stat.value}</div>
                     </div>
                 ))}
             </div>
 
             {/* Pagination Controls */}
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+            <div className="p-6 rounded-3xl surface-panel">
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <div className="text-sm font-bold text-slate-600">
+                    <div className="text-sm font-bold text-[#6b5b52]">
                         Trang {currentPage} / {Math.ceil(totalEmails / emailsPerPage)}
-                        <span className="ml-2 text-slate-400">
+                        <span className="ml-2 text-[#9c8573]">
                             (Email {((currentPage - 1) * emailsPerPage) + 1} - {Math.min(currentPage * emailsPerPage, totalEmails)})
                         </span>
                     </div>
@@ -179,25 +216,25 @@ export default function EmailsTab({ apiKey, allEmails, setAllEmails }) {
             <div className="space-y-4">
                 {loading && allEmails.length === 0 ? (
                     <div className="py-20 text-center">
-                        <RefreshCw className="w-10 h-10 text-blue-600 animate-spin mx-auto mb-4" />
-                        <p className="text-slate-500 font-bold">Đang tải dữ liệu...</p>
+                        <RefreshCw className="w-10 h-10 text-[#c5532d] animate-spin mx-auto mb-4" />
+                        <p className="text-[#6b5b52] font-bold">Đang tải dữ liệu...</p>
                     </div>
                 ) : filteredEmails.length === 0 ? (
-                    <div className="bg-white py-24 rounded-[3rem] text-center border-2 border-dashed border-slate-200">
-                        <MailIcon size={64} className="mx-auto text-slate-200 mb-6" />
-                        <p className="text-slate-400 font-bold text-lg">Hộp thư đang trống</p>
+                    <div className="surface-soft py-24 rounded-[3rem] text-center">
+                        <MailIcon size={64} className="mx-auto text-[#e2cdb5] mb-6" />
+                        <p className="text-[#9c8573] font-bold text-lg">Hộp thư đang trống</p>
                     </div>
                 ) : (
                     <div className="space-y-4">
                         {/* Select All */}
-                        <div className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center gap-3">
+                        <div className="p-4 rounded-2xl surface-panel flex items-center gap-3">
                             <input
                                 type="checkbox"
                                 checked={selectedEmailIds.length === filteredEmails.length && filteredEmails.length > 0}
                                 onChange={toggleSelectAll}
-                                className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-100"
+                                className="w-5 h-5 rounded border-[#cdb8a3] text-[#c5532d] focus:ring-2 focus:ring-[#d59b46]/40"
                             />
-                            <span className="text-sm font-bold text-slate-600">
+                            <span className="text-sm font-bold text-[#6b5b52]">
                                 Chọn tất cả ({filteredEmails.length} email)
                             </span>
                         </div>
@@ -210,7 +247,7 @@ export default function EmailsTab({ apiKey, allEmails, setAllEmails }) {
                                         initial={{ opacity: 0, y: 15 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         transition={{ delay: idx * 0.02 }}
-                                        className="group bg-white p-8 rounded-[2rem] border border-slate-50 shadow-sm hover:shadow-xl hover:shadow-blue-900/5 transition-all cursor-pointer relative overflow-hidden"
+                                        className="group p-8 rounded-[2rem] border border-[#ead8c5] shadow-sm hover:shadow-xl hover:shadow-[#c5532d]/10 transition-all cursor-pointer relative overflow-hidden surface-panel"
                                         onClick={() => setSelectedEmail(email)}
                                     >
                                         <div className="flex flex-col gap-6">
@@ -224,35 +261,35 @@ export default function EmailsTab({ apiKey, allEmails, setAllEmails }) {
                                                             toggleSelectEmail(email.id)
                                                         }}
                                                         onClick={(e) => e.stopPropagation()}
-                                                        className="mt-1 w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-100"
+                                                        className="mt-1 w-5 h-5 rounded border-[#cdb8a3] text-[#c5532d] focus:ring-2 focus:ring-[#d59b46]/40"
                                                     />
-                                                    <h3 className="text-xl font-extrabold text-slate-800 leading-tight group-hover:text-blue-600 transition-colors flex-1">
+                                                    <h3 className="text-xl font-extrabold text-[#2a1f1a] leading-tight group-hover:text-[#c5532d] transition-colors flex-1 font-display">
                                                         {email.subject || '(Không có chủ đề)'}
                                                     </h3>
                                                 </div>
-                                                <div className="shrink-0 px-4 py-2 bg-slate-50 rounded-2xl text-xs font-bold text-slate-400 border border-slate-100 uppercase tracking-tighter">
+                                                <div className="shrink-0 px-4 py-2 bg-[#f7eee4] rounded-2xl text-xs font-bold text-[#9c8573] border border-[#ead8c5] uppercase tracking-tighter">
                                                     {new Date(email.receivedAt).toLocaleDateString('vi-VN')}
                                                 </div>
                                             </div>
 
-                                            <div className="flex flex-wrap gap-6 items-center pt-6 border-t border-slate-50">
+                                            <div className="flex flex-wrap gap-6 items-center pt-6 border-t border-[#ead8c5]">
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
+                                                    <div className="w-10 h-10 bg-[#e8f2ed] text-[#1f6a5c] rounded-xl flex items-center justify-center">
                                                         <User size={18} />
                                                     </div>
                                                     <div className="flex flex-col">
-                                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Từ</span>
-                                                        <span className="text-sm font-bold text-slate-700">{email.from?.address}</span>
+                                                        <span className="text-[10px] font-black text-[#9c8573] uppercase tracking-widest">Từ</span>
+                                                        <span className="text-sm font-bold text-[#2a1f1a]">{email.from?.address}</span>
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center">
+                                                    <div className="w-10 h-10 bg-[#f7e6d4] text-[#c5532d] rounded-xl flex items-center justify-center">
                                                         <Send size={18} />
                                                     </div>
                                                     <div className="flex flex-col relative">
-                                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Đến</span>
+                                                        <span className="text-[10px] font-black text-[#9c8573] uppercase tracking-widest">Đến</span>
                                                         <div className="flex items-center gap-2">
-                                                            <span className="text-sm font-bold text-slate-700">{email.to}</span>
+                                                            <span className="text-sm font-bold text-[#2a1f1a]">{email.to}</span>
                                                             {email.to && (
                                                                 <GroupSelector
                                                                     emailAddress={email.to}
@@ -260,6 +297,9 @@ export default function EmailsTab({ apiKey, allEmails, setAllEmails }) {
                                                                     onGroupToggle={() => {
                                                                         toast.success('Đã cập nhật nhóm')
                                                                     }}
+                                                                    idKey={`${email.id || email.to}-selector`}
+                                                                    activeKey={activeGroupSelector}
+                                                                    setActiveKey={setActiveGroupSelector}
                                                                 />
                                                             )}
                                                         </div>

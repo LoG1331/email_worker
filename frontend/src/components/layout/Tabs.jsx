@@ -10,7 +10,7 @@ export default function Tabs({ activeTab, onTabChange }) {
     ]
 
     return (
-        <div className="flex p-1.5 bg-slate-200/50 rounded-2xl w-fit mb-10 shadow-inner border border-slate-200/50">
+        <div className="flex p-1.5 bg-[#f1e3d4] rounded-2xl w-fit mb-10 shadow-inner border border-[#e2cdb5]">
             {tabs.map((tab) => {
                 const Icon = tab.icon
                 const isActive = activeTab === tab.id
@@ -21,7 +21,7 @@ export default function Tabs({ activeTab, onTabChange }) {
                         onClick={() => onTabChange(tab.id)}
                         className={`
               relative flex items-center gap-2.5 px-8 py-3 rounded-xl text-sm font-bold transition-all duration-300
-              ${isActive ? 'text-blue-700' : 'text-slate-500 hover:text-slate-700'}
+              ${isActive ? 'text-[#2a1f1a]' : 'text-[#6b5b52] hover:text-[#2a1f1a]'}
             `}
                     >
                         <Icon size={18} />
@@ -30,7 +30,7 @@ export default function Tabs({ activeTab, onTabChange }) {
                         {isActive && (
                             <motion.div
                                 layoutId="active-tab-bg-light"
-                                className="absolute inset-0 bg-white shadow-md rounded-xl"
+                                className="absolute inset-0 bg-[#fff8ef] shadow-md rounded-xl border border-[#ead8c5]"
                                 transition={{ type: 'spring', bounce: 0.1, duration: 0.5 }}
                             />
                         )}

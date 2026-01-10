@@ -40,22 +40,25 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-slate-900 p-4 md:p-8 relative overflow-hidden">
-      {/* Background Light Decor */}
+    <div className="min-h-screen text-ink p-4 md:p-8 relative overflow-hidden">
+      {/* Background Atmosphere */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-100/50 rounded-full blur-[120px]" />
-        <div className="absolute bottom-[10%] right-[-5%] w-[40%] h-[40%] bg-indigo-100/50 rounded-full blur-[100px]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(227,175,96,0.25),_transparent_60%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,_rgba(31,106,92,0.2),_transparent_55%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(120deg,_rgba(255,248,239,0.9),_rgba(246,239,230,0.95))]" />
+        <div className="absolute top-[-20%] left-[-10%] w-[45%] h-[45%] bg-[#f1d6b5] rounded-full blur-[120px]" />
+        <div className="absolute bottom-[-15%] right-[-5%] w-[40%] h-[40%] bg-[#cfe2d3] rounded-full blur-[120px]" />
       </div>
 
       <Toaster
         position="top-right"
         toastOptions={{
           style: {
-            background: '#ffffff',
-            color: '#0f172a',
-            border: '1px solid #e2e8f0',
-            borderRadius: '16px',
-            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
+            background: '#fff8ef',
+            color: '#2a1f1a',
+            border: '1px solid #e6d6c4',
+            borderRadius: '18px',
+            boxShadow: '0 18px 30px -25px rgba(42, 31, 26, 0.4)'
           },
         }}
       />
