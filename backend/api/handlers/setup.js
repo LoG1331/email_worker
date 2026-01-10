@@ -46,7 +46,7 @@ export async function handleSetupRoutes(request, env, url) {
             workerName: env.WORKER_NAME || 'default',
             config: config ? {
                 BOT_TOKEN: maskToken(config.BOT_TOKEN),
-                API_KEY: maskToken(config.API_KEY),
+                API_KEY: '[HIDDEN]',
                 EMAIL_DOMAIN: config.EMAIL_DOMAIN
             } : null,
             raw: {

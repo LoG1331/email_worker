@@ -162,7 +162,7 @@ export default function SettingsModal({ isOpen, onClose, apiKey }) {
                                     <div>
                                         <label className="text-sm font-bold text-[#6b5b52] mb-1 block">API_KEY</label>
                                         <input
-                                            type="text"
+                                            type="password"
                                             value={newConfig.API_KEY}
                                             onChange={(e) => setNewConfig({ ...newConfig, API_KEY: e.target.value })}
                                             placeholder="your-api-key"

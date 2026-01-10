@@ -126,8 +126,8 @@ export default function LoginModal({ onLogin }) {
                         <button
                             onClick={() => setActiveTab('login')}
                             className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'login'
-                                    ? 'bg-white text-[#2a1f1a] shadow-md'
-                                    : 'text-[#6b5b52] hover:text-[#2a1f1a]'
+                                ? 'bg-white text-[#2a1f1a] shadow-md'
+                                : 'text-[#6b5b52] hover:text-[#2a1f1a]'
                                 }`}
                         >
                             <Lock size={16} />
@@ -136,8 +136,8 @@ export default function LoginModal({ onLogin }) {
                         <button
                             onClick={() => setActiveTab('config')}
                             className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'config'
-                                    ? 'bg-white text-[#2a1f1a] shadow-md'
-                                    : 'text-[#6b5b52] hover:text-[#2a1f1a]'
+                                ? 'bg-white text-[#2a1f1a] shadow-md'
+                                : 'text-[#6b5b52] hover:text-[#2a1f1a]'
                                 }`}
                         >
                             <Settings size={16} />
@@ -235,7 +235,7 @@ export default function LoginModal({ onLogin }) {
                                         API Key
                                     </label>
                                     <input
-                                        type="text"
+                                        type="password"
                                         className="w-full px-4 py-3 bg-[#fffdf8] border border-[#ead8c5] rounded-xl focus:ring-2 focus:ring-[#d59b46]/40 outline-none font-mono text-sm"
                                         placeholder="your-secret-api-key"
                                         value={config.API_KEY}
