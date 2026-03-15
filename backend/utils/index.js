@@ -28,6 +28,6 @@ export const generateRandomEmail = async (env) => {
     const last = pick(lastNames);
     const username = pick(patterns)(first, last);
     const config = await getConfig(env);
-    const { EMAIL_DOMAIN } = config?.EMAIL_DOMAIN || '';
+    const EMAIL_DOMAIN = (config?.EMAIL_DOMAIN || '').trim();
     return `${username}@${EMAIL_DOMAIN}`;
 };
