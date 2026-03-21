@@ -66,7 +66,7 @@ export function normalizeOptional(value) {
 
 export function formatApiError(error) {
   if (!error) {
-    return 'Unknown error'
+    return 'Lỗi không xác định'
   }
 
   if (error.message) {
@@ -81,7 +81,7 @@ export function getPermissionScopeLabel(permission) {
     return ''
   }
 
-  return permission.emailAddress || permission.domain
+  return permission.domain || ''
 }
 
 export function truncate(value, maxLength = 120) {

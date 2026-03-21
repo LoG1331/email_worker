@@ -136,16 +136,12 @@ export function rotateMyApiKey(token, payload = {}) {
   })
 }
 
-export function listUsers(token) {
-  return request('/v1/users', { token })
+export function listUsers(token, filters = {}) {
+  return request(withQuery('/v1/users', filters), { token })
 }
 
 export function getUserById(token, userId) {
   return request(`/v1/users/${userId}`, { token })
-}
-
-export function getUserByTelegramId(token, telegramId) {
-  return request(`/v1/users/by-telegram/${telegramId}`, { token })
 }
 
 export function createUser(token, payload) {
@@ -164,8 +160,8 @@ export function updateUser(token, userId, payload) {
   })
 }
 
-export function listAdmins(token) {
-  return request('/v1/admins', { token })
+export function listAdmins(token, filters = {}) {
+  return request(withQuery('/v1/admins', filters), { token })
 }
 
 export function grantAdmin(token, payload) {
@@ -214,8 +210,8 @@ export function deletePermission(token, permissionId) {
   })
 }
 
-export function listDomains(token) {
-  return request('/v1/domains', { token })
+export function listDomains(token, filters = {}) {
+  return request(withQuery('/v1/domains', filters), { token })
 }
 
 export function createDomain(token, payload) {
@@ -235,37 +231,6 @@ export function updateDomain(token, domain, payload) {
     method: 'PATCH',
     token,
     body: payload,
-  })
-}
-
-export function listDomainPermissions(token, domain) {
-  return request(`/v1/domains/${encodeURIComponent(domain)}/permissions`, { token })
-}
-
-export function createDomainPermission(token, domain, payload) {
-  return request(`/v1/domains/${encodeURIComponent(domain)}/permissions`, {
-    method: 'POST',
-    token,
-    body: payload,
-  })
-}
-
-export function getDomainPermission(token, domain, permissionId) {
-  return request(`/v1/domains/${encodeURIComponent(domain)}/permissions/${permissionId}`, { token })
-}
-
-export function updateDomainPermission(token, domain, permissionId, payload) {
-  return request(`/v1/domains/${encodeURIComponent(domain)}/permissions/${permissionId}`, {
-    method: 'PATCH',
-    token,
-    body: payload,
-  })
-}
-
-export function deleteDomainPermission(token, domain, permissionId) {
-  return request(`/v1/domains/${encodeURIComponent(domain)}/permissions/${permissionId}`, {
-    method: 'DELETE',
-    token,
   })
 }
 
@@ -292,12 +257,18 @@ export function listEmails(token, filters = {}) {
   return request(withQuery('/v1/emails', filters), { token })
 }
 
-export function batchFetchEmails(token, payload) {
-  return request('/v1/emails/batch', {
-    method: 'POST',
-    token,
-    body: payload,
-  })
+export function listRegisteredEmails(token, filters = {}) {
+  return request(withQuery('/v1/emails', {
+    ...filters,
+    scope: 'registered',
+  }), { token })
+}
+
+export function listSystemEmails(token, filters = {}) {
+  return request(withQuery('/v1/emails', {
+    ...filters,
+    scope: 'system',
+  }), { token })
 }
 
 export function getEmailById(token, id, options = {}) {
@@ -313,8 +284,12 @@ export function deleteEmailById(token, id) {
   })
 }
 
-export function getInboxByAddress(token, emailAddress, limit) {
-  return request(withQuery(`/v1/inboxes/${encodeURIComponent(emailAddress)}`, { limit }), { token })
+export function getInboxByAddress(token, emailAddress, options = {}) {
+  return request(withQuery(`/v1/inboxes/${encodeURIComponent(emailAddress)}`, {
+    limit: options.limit,
+    cursor: options.cursor,
+    stime: options.stime,
+  }), { token })
 }
 
 export function clearInbox(token, emailAddress) {
@@ -340,6 +315,14 @@ export function getGroup(token, groupId) {
   return request(`/v1/groups/${groupId}`, { token })
 }
 
+export function getGroupEmails(token, groupId, options = {}) {
+  return request(withQuery(`/v1/groups/${groupId}/emails`, {
+    limit: options.limit,
+    cursor: options.cursor,
+    includeRawMime: options.includeRawMime ? 1 : undefined,
+  }), { token })
+}
+
 export function updateGroup(token, groupId, payload) {
   return request(`/v1/groups/${groupId}`, {
     method: 'PATCH',
@@ -355,25 +338,9 @@ export function deleteGroup(token, groupId) {
   })
 }
 
-export function getGroupEmails(token, groupId, options = {}) {
-  return request(withQuery(`/v1/groups/${groupId}/emails`, {
-    limit: options.limit,
-    offset: options.offset,
-    includeRawMime: options.includeRawMime ? 1 : undefined,
-  }), { token })
-}
-
 export function addGroupEmails(token, groupId, payload) {
   return request(`/v1/groups/${groupId}/emails`, {
     method: 'POST',
-    token,
-    body: payload,
-  })
-}
-
-export function replaceGroupEmails(token, groupId, payload) {
-  return request(`/v1/groups/${groupId}/emails`, {
-    method: 'PUT',
     token,
     body: payload,
   })

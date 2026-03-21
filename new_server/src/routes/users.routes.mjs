@@ -5,11 +5,11 @@ import {
     assertSuperAdmin,
     createUser,
     getUserById,
-    getUserByTelegramId,
     listUsers,
     rotateUserApiKey,
     updateUser
 } from '../services/account-service.mjs';
+import { parsePagination } from '../utils/http.mjs';
 
 const createUserSchema = z.object({
     username: z.string().min(3),
@@ -38,19 +38,16 @@ export function createUsersRouter(config) {
 
     router.get('/', asyncHandler(async (req, res) => {
         assertSuperAdmin(req.auth);
-        const users = await listUsers(config);
-        res.json({
-            count: users.length,
-            users,
-            requestId: req.requestId
+        const result = await listUsers(config, {
+            q: req.query.q ? String(req.query.q) : '',
+            telegramId: req.query.telegramId ? String(req.query.telegramId) : '',
+            limit: parsePagination(req.query.limit, 50, { min: 1, max: 200 }),
+            offset: parsePagination(req.query.offset, 0, { min: 0, max: 100000 })
         });
-    }));
-
-    router.get('/by-telegram/:telegramId', asyncHandler(async (req, res) => {
-        assertSuperAdmin(req.auth);
-        const user = await getUserByTelegramId(config, req.params.telegramId);
         res.json({
-            user,
+            total: result.total,
+            count: result.users.length,
+            users: result.users,
             requestId: req.requestId
         });
     }));

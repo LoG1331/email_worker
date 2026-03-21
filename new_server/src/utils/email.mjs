@@ -2,9 +2,16 @@ function normalizeText(value) {
     return String(value || '').trim().toLowerCase();
 }
 
+const DOMAIN_REGEX = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+export function isValidDomain(value) {
+    const normalized = normalizeText(value);
+    return DOMAIN_REGEX.test(normalized);
+}
+
 export function normalizeDomain(value) {
     const normalized = normalizeText(value);
-    if (!normalized || !normalized.includes('.') || normalized.startsWith('.') || normalized.endsWith('.')) {
+    if (!isValidDomain(normalized)) {
         return '';
     }
 
@@ -53,4 +60,3 @@ export function parseEmailAddress(value) {
 export function parseEnvelopeAddress(value) {
     return parseEmailAddress(value);
 }
-

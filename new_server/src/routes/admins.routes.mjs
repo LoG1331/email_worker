@@ -7,6 +7,7 @@ import {
     listAdmins,
     revokeAdmin
 } from '../services/account-service.mjs';
+import { parsePagination } from '../utils/http.mjs';
 
 const adminMutationSchema = z.object({
     userId: z.union([z.number().int().positive(), z.string().min(1)]).optional(),
@@ -20,10 +21,15 @@ export function createAdminsRouter(config) {
 
     router.get('/', asyncHandler(async (req, res) => {
         assertSuperAdmin(req.auth);
-        const admins = await listAdmins(config);
+        const result = await listAdmins(config, {
+            q: req.query.q ? String(req.query.q) : '',
+            limit: parsePagination(req.query.limit, 50, { min: 1, max: 200 }),
+            offset: parsePagination(req.query.offset, 0, { min: 0, max: 100000 })
+        });
         res.json({
-            count: admins.length,
-            admins,
+            total: result.total,
+            count: result.admins.length,
+            admins: result.admins,
             requestId: req.requestId
         });
     }));

@@ -7,27 +7,18 @@ import {
 } from 'node:crypto';
 import { promisify } from 'node:util';
 import { getDb, withTransaction } from '../db/index.mjs';
-import { buildEmailAddress, normalizeDomain, normalizeLocalPart, parseEmailAddress } from '../utils/email.mjs';
+import { normalizeDomain, parseEmailAddress } from '../utils/email.mjs';
 import { HttpError } from '../utils/http.mjs';
 
 const scrypt = promisify(scryptCallback);
 
-const ROLE_LEVELS = {
-    viewer: 1,
-    operator: 2,
-    admin: 3
-};
-
 const PERMISSION_REQUIREMENTS = {
-    view: ROLE_LEVELS.viewer,
-    write: ROLE_LEVELS.operator,
-    admin: ROLE_LEVELS.admin,
-    super_admin: Number.POSITIVE_INFINITY
+    view: 1,
+    write: 1
 };
 
 const USER_STATUS = new Set(['active', 'disabled']);
 const PERMISSION_STATUS = new Set(['active', 'disabled']);
-const PERMISSION_ROLES = new Set(Object.keys(ROLE_LEVELS));
 
 function nowIso() {
     return new Date().toISOString();
@@ -81,19 +72,6 @@ function normalizeUserStatus(value, fallback = 'active') {
 
     if (!USER_STATUS.has(normalized)) {
         throw new HttpError(400, `Unsupported user status: ${value}`);
-    }
-
-    return normalized;
-}
-
-function normalizePermissionRole(value, fallback = 'viewer') {
-    const normalized = cleanText(value).toLowerCase();
-    if (!normalized) {
-        return fallback;
-    }
-
-    if (!PERMISSION_ROLES.has(normalized)) {
-        throw new HttpError(400, `Unsupported permission role: ${value}`);
     }
 
     return normalized;
@@ -258,9 +236,6 @@ function mapPermissionRow(row) {
     return {
         id: row.id,
         domain: row.domain_name,
-        localPart: row.local_part || null,
-        emailAddress: row.local_part ? buildEmailAddress(row.local_part, row.domain_name) : null,
-        role: row.role,
         status: row.status,
         user: {
             id: row.user_id,
@@ -452,8 +427,6 @@ async function listPermissionsForUserId(db, userId, { includeDisabled = true } =
             SELECT
                 p.id,
                 p.user_id,
-                p.local_part,
-                p.role,
                 p.status,
                 p.granted_by_user_id,
                 p.granted_by_label,
@@ -472,7 +445,7 @@ async function listPermissionsForUserId(db, userId, { includeDisabled = true } =
             LEFT JOIN users gu ON gu.id = p.granted_by_user_id
             WHERE p.user_id = ?
               AND (? = 1 OR p.status = 'active')
-            ORDER BY d.name ASC, p.local_part ASC
+            ORDER BY d.name ASC, p.id ASC
         `,
         [userId, includeDisabled ? 1 : 0]
     );
@@ -508,36 +481,25 @@ async function assignApiKeyTx(db, config, userId, providedApiKey = '') {
 
 function getPermissionRequirement(permission) {
     const level = PERMISSION_REQUIREMENTS[permission];
-    if (!Number.isFinite(level)) {
+    if (level === undefined) {
         throw new HttpError(500, `Unknown permission requirement: ${permission}`);
     }
 
     return level;
 }
 
-async function getPermissionLevelForScope(db, userId, domainId, localPart = null) {
+async function getPermissionLevelForScope(db, userId, domainId) {
     const row = await db.get(
         `
             SELECT
-                MAX(
-                    CASE p.role
-                        WHEN 'viewer' THEN 1
-                        WHEN 'operator' THEN 2
-                        WHEN 'admin' THEN 3
-                        ELSE 0
-                    END
-                ) AS permission_level
+                1 AS permission_level
             FROM permissions p
             WHERE p.user_id = ?
               AND p.domain_id = ?
               AND p.status = 'active'
-              AND (
-                  (p.local_part IS NULL AND ? IS NULL)
-                  OR p.local_part IS NULL
-                  OR p.local_part = ?
-              )
+            LIMIT 1
         `,
-        [userId, domainId, localPart, localPart]
+        [userId, domainId]
     );
 
     return Number(row?.permission_level || 0);
@@ -646,7 +608,7 @@ export async function ensureDomainPermission(config, auth, domainName, permissio
         };
     }
 
-    const currentLevel = await getPermissionLevelForScope(db, auth?.userId || 0, domain.id, null);
+    const currentLevel = await getPermissionLevelForScope(db, auth?.userId || 0, domain.id);
     if (currentLevel < getPermissionRequirement(permission)) {
         throw new HttpError(403, `Insufficient permission for domain ${domain.name}`);
     }
@@ -659,9 +621,7 @@ export async function ensureDomainPermission(config, auth, domainName, permissio
 }
 
 export async function ensureMailboxPermission(config, auth, emailAddressOrParts, permission = 'view') {
-    const parsedAddress = typeof emailAddressOrParts === 'string'
-        ? parseEmailAddress(emailAddressOrParts)
-        : parseEmailAddress(buildEmailAddress(emailAddressOrParts?.localPart, emailAddressOrParts?.domain));
+    const parsedAddress = parseEmailAddress(emailAddressOrParts);
 
     if (!parsedAddress) {
         throw new HttpError(400, 'Valid email address is required');
@@ -672,7 +632,6 @@ export async function ensureMailboxPermission(config, auth, emailAddressOrParts,
     if (hasGlobalPermission(auth)) {
         return {
             domain: domain.name,
-            localPart: parsedAddress.localPart,
             permission,
             scope: 'global'
         };
@@ -681,8 +640,7 @@ export async function ensureMailboxPermission(config, auth, emailAddressOrParts,
     const currentLevel = await getPermissionLevelForScope(
         db,
         auth?.userId || 0,
-        domain.id,
-        parsedAddress.localPart
+        domain.id
     );
 
     if (currentLevel < getPermissionRequirement(permission)) {
@@ -691,9 +649,8 @@ export async function ensureMailboxPermission(config, auth, emailAddressOrParts,
 
     return {
         domain: domain.name,
-        localPart: parsedAddress.localPart,
         permission,
-        scope: 'mailbox'
+        scope: 'domain'
     };
 }
 
@@ -715,10 +672,9 @@ export async function listAccessibleDomains(config, auth, { domainLevelOnly = fa
             JOIN domains d ON d.id = p.domain_id
             WHERE p.user_id = ?
               AND p.status = 'active'
-              AND (? = 0 OR p.local_part IS NULL)
             ORDER BY d.name ASC
         `,
-        [auth.userId, domainLevelOnly ? 1 : 0]
+        [auth.userId]
     );
 
     return rows.map(row => row.name);
@@ -779,9 +735,31 @@ export async function createUser(config, payload) {
     };
 }
 
-export async function listUsers(config) {
+export async function listUsers(config, options = {}) {
     const db = await getDb(config);
-    const rows = await db.all(
+    const conditions = [];
+    const values = [];
+    const limit = options.limit || 50;
+    const offset = options.offset || 0;
+    const keyword = cleanText(options.q).toLowerCase();
+    const telegramId = options.telegramId === undefined
+        ? null
+        : normalizeTelegramId(options.telegramId);
+
+    if (keyword) {
+        const pattern = `%${keyword}%`;
+        conditions.push(`(LOWER(u.username) LIKE ? OR LOWER(COALESCE(u.display_name, '')) LIKE ? OR COALESCE(u.telegram_id, '') LIKE ?)`);
+        values.push(pattern, pattern, pattern);
+    }
+
+    if (telegramId) {
+        conditions.push(`u.telegram_id = ?`);
+        values.push(telegramId);
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const [rows, totalRow] = await Promise.all([
+        db.all(
         `
             SELECT
                 u.*,
@@ -795,6 +773,7 @@ export async function listUsers(config) {
             LEFT JOIN permissions p
                 ON p.user_id = u.id
                AND p.status = 'active'
+            ${whereClause}
             GROUP BY u.id
             ORDER BY
                 CASE u.status
@@ -803,13 +782,27 @@ export async function listUsers(config) {
                 END,
                 u.username ASC,
                 u.id ASC
-        `
-    );
+            LIMIT ? OFFSET ?
+        `,
+            [...values, limit, offset]
+        ),
+        db.get(
+            `
+                SELECT COUNT(*) AS total
+                FROM users u
+                ${whereClause}
+            `,
+            values
+        )
+    ]);
 
-    return rows.map(row => ({
-        ...mapUserRow(row, { isAdmin: Boolean(row.is_admin) }),
-        permissionCount: row.permission_count || 0
-    }));
+    return {
+        total: totalRow?.total || 0,
+        users: rows.map(row => ({
+            ...mapUserRow(row, { isAdmin: Boolean(row.is_admin) }),
+            permissionCount: row.permission_count || 0
+        }))
+    };
 }
 
 export async function getUserById(config, userId) {
@@ -835,42 +828,6 @@ export async function getUserById(config, userId) {
     }
 
     const permissions = await listPermissionsForUserId(db, row.id);
-    return {
-        ...mapUserRow(row, { isAdmin: Boolean(row.is_admin) }),
-        permissions
-    };
-}
-
-export async function getUserByTelegramId(config, telegramId) {
-    const normalizedTelegramId = normalizeTelegramId(telegramId);
-    if (!normalizedTelegramId) {
-        throw new HttpError(400, 'telegramId is required');
-    }
-
-    const db = await getDb(config);
-    const row = await db.get(
-        `
-            SELECT
-                u.*,
-                EXISTS(
-                    SELECT 1
-                    FROM admins a
-                    WHERE a.user_id = u.id
-                ) AS is_admin
-            FROM users u
-            WHERE u.telegram_id = ?
-            LIMIT 1
-        `,
-        [normalizedTelegramId]
-    );
-
-    if (!row) {
-        throw new HttpError(404, 'User not found');
-    }
-
-    const permissions = await listPermissionsForUserId(db, row.id, {
-        includeDisabled: false
-    });
     return {
         ...mapUserRow(row, { isAdmin: Boolean(row.is_admin) }),
         permissions
@@ -1008,9 +965,23 @@ export async function rotateOwnApiKey(config, auth, payload = {}) {
     return rotateUserApiKey(config, auth?.userId, payload);
 }
 
-export async function listAdmins(config) {
+export async function listAdmins(config, options = {}) {
     const db = await getDb(config);
-    const rows = await db.all(
+    const conditions = [];
+    const values = [];
+    const limit = options.limit || 50;
+    const offset = options.offset || 0;
+    const keyword = cleanText(options.q).toLowerCase();
+
+    if (keyword) {
+        const pattern = `%${keyword}%`;
+        conditions.push(`(LOWER(u.username) LIKE ? OR LOWER(COALESCE(u.display_name, '')) LIKE ? OR COALESCE(u.telegram_id, '') LIKE ?)`);
+        values.push(pattern, pattern, pattern);
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const [rows, totalRow] = await Promise.all([
+        db.all(
         `
             SELECT
                 a.user_id,
@@ -1032,25 +1003,41 @@ export async function listAdmins(config) {
             FROM admins a
             JOIN users u ON u.id = a.user_id
             LEFT JOIN users gu ON gu.id = a.granted_by_user_id
+            ${whereClause}
             ORDER BY u.username ASC, u.id ASC
-        `
-    );
+            LIMIT ? OFFSET ?
+        `,
+            [...values, limit, offset]
+        ),
+        db.get(
+            `
+                SELECT COUNT(*) AS total
+                FROM admins a
+                JOIN users u ON u.id = a.user_id
+                ${whereClause}
+            `,
+            values
+        )
+    ]);
 
-    return rows.map(row => ({
-        ...mapUserRow({
-            ...row,
-            id: row.user_id,
-            created_at: row.user_created_at
-        }, {
-            isAdmin: true
-        }),
-        grantedBy: row.granted_by_user_id ? {
-            userId: row.granted_by_user_id,
-            username: row.granted_by_username,
-            displayName: row.granted_by_display_name
-        } : (row.granted_by_label ? { label: row.granted_by_label } : null),
-        grantedAt: row.created_at
-    }));
+    return {
+        total: totalRow?.total || 0,
+        admins: rows.map(row => ({
+            ...mapUserRow({
+                ...row,
+                id: row.user_id,
+                created_at: row.user_created_at
+            }, {
+                isAdmin: true
+            }),
+            grantedBy: row.granted_by_user_id ? {
+                userId: row.granted_by_user_id,
+                username: row.granted_by_username,
+                displayName: row.granted_by_display_name
+            } : (row.granted_by_label ? { label: row.granted_by_label } : null),
+            grantedAt: row.created_at
+        }))
+    };
 }
 
 export async function grantAdmin(config, payload, auth) {
@@ -1102,10 +1089,12 @@ export async function revokeAdmin(config, userId) {
     return { success: true };
 }
 
-export async function listPermissions(config, filters = {}) {
+export async function listPermissions(config, filters = {}, pagination = {}) {
     const db = await getDb(config);
     const conditions = [];
     const values = [];
+    const limit = pagination.limit || 50;
+    const offset = pagination.offset || 0;
 
     if (filters.userId) {
         conditions.push(`p.user_id = ?`);
@@ -1127,34 +1116,18 @@ export async function listPermissions(config, filters = {}) {
         values.push(normalizedDomain);
     }
 
-    if (filters.localPart !== undefined && filters.localPart !== null && filters.localPart !== '') {
-        const normalizedLocalPart = normalizeLocalPart(filters.localPart);
-        if (!normalizedLocalPart) {
-            throw new HttpError(400, 'Invalid localPart filter');
-        }
-
-        conditions.push(`p.local_part = ?`);
-        values.push(normalizedLocalPart);
-    }
-
-    if (filters.role) {
-        conditions.push(`p.role = ?`);
-        values.push(normalizePermissionRole(filters.role));
-    }
-
     if (filters.status) {
         conditions.push(`p.status = ?`);
         values.push(normalizePermissionStatus(filters.status));
     }
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    const rows = await db.all(
+    const [rows, totalRow] = await Promise.all([
+        db.all(
         `
             SELECT
                 p.id,
                 p.user_id,
-                p.local_part,
-                p.role,
                 p.status,
                 p.granted_by_user_id,
                 p.granted_by_label,
@@ -1172,25 +1145,33 @@ export async function listPermissions(config, filters = {}) {
             JOIN domains d ON d.id = p.domain_id
             LEFT JOIN users gu ON gu.id = p.granted_by_user_id
             ${whereClause}
-            ORDER BY d.name ASC, p.local_part ASC, u.username ASC
+            ORDER BY d.name ASC, u.username ASC, p.id ASC
+            LIMIT ? OFFSET ?
         `,
-        values
-    );
+            [...values, limit, offset]
+        ),
+        db.get(
+            `
+                SELECT COUNT(*) AS total
+                FROM permissions p
+                JOIN users u ON u.id = p.user_id
+                JOIN domains d ON d.id = p.domain_id
+                ${whereClause}
+            `,
+            values
+        )
+    ]);
 
-    return rows.map(mapPermissionRow);
+    return {
+        total: totalRow?.total || 0,
+        permissions: rows.map(mapPermissionRow)
+    };
 }
 
 export async function upsertPermission(config, payload, auth) {
     const normalizedDomain = normalizeDomain(payload.domain);
     if (!normalizedDomain) {
         throw new HttpError(400, 'Valid domain is required');
-    }
-
-    const normalizedLocalPart = payload.localPart === undefined || payload.localPart === null || payload.localPart === ''
-        ? null
-        : normalizeLocalPart(payload.localPart);
-    if (payload.localPart !== undefined && payload.localPart !== null && payload.localPart !== '' && !normalizedLocalPart) {
-        throw new HttpError(400, 'Valid localPart is required');
     }
 
     let permissionId = null;
@@ -1204,33 +1185,22 @@ export async function upsertPermission(config, payload, auth) {
                 FROM permissions
                 WHERE user_id = ?
                   AND domain_id = ?
-                  AND (
-                      (? IS NULL AND local_part IS NULL)
-                      OR local_part = ?
-                  )
                 LIMIT 1
             `,
-            [
-                user.id,
-                domain.id,
-                normalizedLocalPart,
-                normalizedLocalPart
-            ]
+            [user.id, domain.id]
         );
 
         if (current) {
             await db.run(
                 `
                     UPDATE permissions
-                    SET role = ?,
-                        status = ?,
+                    SET status = ?,
                         granted_by_user_id = ?,
                         granted_by_label = ?,
                         updated_at = ?
                     WHERE id = ?
                 `,
                 [
-                    normalizePermissionRole(payload.role, 'viewer'),
                     normalizePermissionStatus(payload.status, 'active'),
                     auth?.userId || null,
                     getAuditActor(auth),
@@ -1248,21 +1218,17 @@ export async function upsertPermission(config, payload, auth) {
                 INSERT INTO permissions (
                     user_id,
                     domain_id,
-                    local_part,
-                    role,
                     status,
                     granted_by_user_id,
                     granted_by_label,
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             `,
             [
                 user.id,
                 domain.id,
-                normalizedLocalPart,
-                normalizePermissionRole(payload.role, 'viewer'),
                 normalizePermissionStatus(payload.status, 'active'),
                 auth?.userId || null,
                 getAuditActor(auth),
@@ -1274,7 +1240,11 @@ export async function upsertPermission(config, payload, auth) {
         permissionId = result.lastID || null;
     });
 
-    const [permission] = await listPermissions(config, { domain: normalizedDomain });
+    const { permissions } = await listPermissions(config, { domain: normalizedDomain }, {
+        limit: 1,
+        offset: 0
+    });
+    const [permission] = permissions;
     if (!permissionId) {
         return permission || null;
     }
@@ -1290,8 +1260,6 @@ export async function getPermissionById(config, permissionId) {
             SELECT
                 p.id,
                 p.user_id,
-                p.local_part,
-                p.role,
                 p.status,
                 p.granted_by_user_id,
                 p.granted_by_label,
@@ -1332,15 +1300,13 @@ export async function updatePermission(config, permissionId, payload, auth) {
         await db.run(
             `
                 UPDATE permissions
-                SET role = ?,
-                    status = ?,
+                SET status = ?,
                     granted_by_user_id = ?,
                     granted_by_label = ?,
                     updated_at = ?
                 WHERE id = ?
             `,
             [
-                payload.role === undefined ? current.role : normalizePermissionRole(payload.role, current.role),
                 payload.status === undefined ? current.status : normalizePermissionStatus(payload.status, current.status),
                 auth?.userId || null,
                 getAuditActor(auth),

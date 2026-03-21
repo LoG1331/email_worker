@@ -1,5 +1,4 @@
 import express from 'express';
-import { z } from 'zod';
 import { ensureDomainPermission, ensureMailboxPermission, hasGlobalPermission } from '../services/account-service.mjs';
 import { asyncHandler } from '../utils/async-handler.mjs';
 import { parseEmailAddress } from '../utils/email.mjs';
@@ -13,17 +12,21 @@ import {
     listEmails
 } from '../services/email-service.mjs';
 
-const batchEmailSchema = z.object({
-    emailIds: z.array(z.union([z.number().int().positive(), z.string().min(1)])).min(1).max(200),
-    includeRawMime: z.boolean().optional()
-});
-
 export function createEmailsRouter(config) {
     const router = express.Router();
 
     router.get('/', asyncHandler(async (req, res) => {
         const requestedDomain = req.query.domain ? String(req.query.domain) : '';
         const requestedAddress = req.query.address ? String(req.query.address) : '';
+        const requestedScope = req.query.scope ? String(req.query.scope) : '';
+
+        if (requestedScope && requestedScope !== 'registered' && requestedScope !== 'system') {
+            throw new HttpError(400, 'Invalid scope filter');
+        }
+
+        if (requestedScope === 'system' && !hasGlobalPermission(req.auth)) {
+            throw new HttpError(403, 'System scope is only available to admins');
+        }
 
         if (requestedDomain && requestedAddress) {
             const parsedAddress = parseEmailAddress(requestedAddress);
@@ -48,31 +51,17 @@ export function createEmailsRouter(config) {
             ...req.auth,
         }, {
             limit: parsePagination(req.query.limit, 50, { min: 1, max: 200 }),
-            offset: parsePagination(req.query.offset, 0, { min: 0, max: 100000 }),
+            cursor: req.query.cursor ? String(req.query.cursor) : '',
             domain: requestedDomain,
-            address: requestedAddress
-        });
-
-        res.json({
-            total: result.total,
-            count: result.emails.length,
-            emails: result.emails,
-            requestId: req.requestId
-        });
-    }));
-
-    router.post('/batch', asyncHandler(async (req, res) => {
-        const payload = batchEmailSchema.parse(req.body);
-        const result = await getAuthorizedEmailsByIds(config, req.auth, payload.emailIds, {
-            includeRawMime: payload.includeRawMime === true,
-            permission: 'view'
+            address: requestedAddress,
+            scope: requestedScope
         });
 
         res.json({
             count: result.count,
             emails: result.emails,
-            missingIds: result.missingIds,
-            deniedIds: result.deniedIds,
+            nextCursor: result.nextCursor,
+            hasMore: result.hasMore,
             requestId: req.requestId
         });
     }));
@@ -130,16 +119,22 @@ export function createInboxesRouter(config) {
         }
 
         await assertRegisteredMailboxPermission(config, req.auth, parsedAddress.email, 'view');
-        const emails = await getInboxByAddress(
+        const result = await getInboxByAddress(
             config,
             emailAddress,
-            parsePagination(req.query.limit, 50, { min: 1, max: 200 })
+            {
+                limit: parsePagination(req.query.limit, 50, { min: 1, max: 200 }),
+                cursor: req.query.cursor ? String(req.query.cursor) : '',
+                stime: req.query.stime ? String(req.query.stime) : ''
+            }
         );
 
         res.json({
             emailAddress,
-            count: emails.length,
-            emails,
+            count: result.count,
+            emails: result.emails,
+            nextCursor: result.nextCursor,
+            hasMore: result.hasMore,
             requestId: req.requestId
         });
     }));

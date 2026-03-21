@@ -1,6 +1,7 @@
 import express from 'express';
 import { z } from 'zod';
 import { asyncHandler } from '../utils/async-handler.mjs';
+import { parsePagination } from '../utils/http.mjs';
 import {
     addEmailsToGroup,
     createGroup,
@@ -9,10 +10,8 @@ import {
     listGroupEmails,
     listGroups,
     removeEmailFromGroup,
-    replaceGroupEmails,
     updateGroup
 } from '../services/group-service.mjs';
-import { parsePagination } from '../utils/http.mjs';
 
 const groupCreateSchema = z.object({
     name: z.string().min(1),
@@ -27,20 +26,24 @@ const groupUpdateSchema = z.object({
 });
 
 const groupEmailBatchSchema = z.object({
-    emailIds: z.array(z.union([z.number().int().positive(), z.string().min(1)])).max(200),
-    includeRawMime: z.boolean().optional()
+    emailIds: z.array(z.union([z.number().int().positive(), z.string().min(1)])).max(200).optional(),
+    emailAddresses: z.array(z.string().min(1)).max(200).optional()
+}).refine((payload) => Boolean(payload.emailIds?.length || payload.emailAddresses?.length), {
+    message: 'emailIds or emailAddresses is required'
 });
 
 export function createGroupsRouter(config) {
     const router = express.Router();
 
     router.get('/', asyncHandler(async (req, res) => {
-        const groups = await listGroups(config, req.auth, {
-            ownerUserId: req.query.ownerUserId ? String(req.query.ownerUserId) : ''
+        const result = await listGroups(config, req.auth, {
+            limit: parsePagination(req.query.limit, 50, { min: 1, max: 200 }),
+            offset: parsePagination(req.query.offset, 0, { min: 0, max: 100000 })
         });
         res.json({
-            count: groups.length,
-            groups,
+            total: result.total,
+            count: result.groups.length,
+            groups: result.groups,
             requestId: req.requestId
         });
     }));
@@ -84,29 +87,24 @@ export function createGroupsRouter(config) {
     router.get('/:groupId/emails', asyncHandler(async (req, res) => {
         const result = await listGroupEmails(config, req.auth, req.params.groupId, {
             limit: parsePagination(req.query.limit, 100, { min: 1, max: 200 }),
-            offset: parsePagination(req.query.offset, 0, { min: 0, max: 100000 }),
+            cursor: req.query.cursor ? String(req.query.cursor) : '',
             includeRawMime: req.query.includeRawMime === '1'
         });
+
         res.json({
-            ...result,
+            group: result.group,
+            count: result.count,
+            emails: result.emails,
+            nextCursor: result.nextCursor,
+            hasMore: result.hasMore,
             requestId: req.requestId
         });
     }));
 
     router.post('/:groupId/emails', asyncHandler(async (req, res) => {
         const payload = groupEmailBatchSchema.parse(req.body);
-        const result = await addEmailsToGroup(config, req.auth, req.params.groupId, payload.emailIds);
+        const result = await addEmailsToGroup(config, req.auth, req.params.groupId, payload);
         res.status(201).json({
-            success: true,
-            ...result,
-            requestId: req.requestId
-        });
-    }));
-
-    router.put('/:groupId/emails', asyncHandler(async (req, res) => {
-        const payload = groupEmailBatchSchema.parse(req.body);
-        const result = await replaceGroupEmails(config, req.auth, req.params.groupId, payload.emailIds);
-        res.json({
             success: true,
             ...result,
             requestId: req.requestId

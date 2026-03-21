@@ -10,6 +10,42 @@ let pruneState = {
     running: false
 };
 
+async function rebuildPermissionsTableIfNeeded(db) {
+    const columns = await db.all(`PRAGMA table_info(permissions)`);
+    if (!columns.length) {
+        return;
+    }
+
+    const columnNames = new Set(columns.map((column) => column.name));
+    const legacySchema = columnNames.has('local_part') || columnNames.has('role');
+
+    if (!legacySchema) {
+        return;
+    }
+
+    await db.exec(`
+        DROP INDEX IF EXISTS idx_permissions_unique_domain_scope;
+        DROP INDEX IF EXISTS idx_permissions_unique_mailbox_scope;
+        DROP INDEX IF EXISTS idx_permissions_user_scope;
+        DROP INDEX IF EXISTS idx_permissions_domain_scope;
+        DROP TABLE IF EXISTS permissions;
+    `);
+
+    await db.exec(`
+        CREATE TABLE permissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            domain_id INTEGER NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
+            status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'disabled')),
+            granted_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            granted_by_label TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(user_id, domain_id)
+        );
+    `);
+}
+
 async function initializeDatabase(config) {
     await mkdir(path.dirname(config.sqlitePath), { recursive: true });
 
@@ -54,14 +90,12 @@ async function initializeDatabase(config) {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             domain_id INTEGER NOT NULL REFERENCES domains(id) ON DELETE CASCADE,
-            local_part TEXT,
-            role TEXT NOT NULL CHECK(role IN ('viewer', 'operator', 'admin')),
             status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'disabled')),
             granted_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
             granted_by_label TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
-            UNIQUE(user_id, domain_id, local_part)
+            UNIQUE(user_id, domain_id)
         );
 
         CREATE TABLE IF NOT EXISTS admins (
@@ -136,16 +170,16 @@ async function initializeDatabase(config) {
         );
     `);
 
+    await rebuildPermissionsTableIfNeeded(db);
+
     await db.exec(`
         CREATE INDEX IF NOT EXISTS idx_domains_status ON domains (status, name);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_unique ON users (username);
         CREATE INDEX IF NOT EXISTS idx_users_status ON users (status, username);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_users_telegram_id ON users (telegram_id) WHERE telegram_id IS NOT NULL AND telegram_id != '';
         CREATE UNIQUE INDEX IF NOT EXISTS idx_users_api_key_hash ON users (api_key_hash) WHERE api_key_hash IS NOT NULL AND api_key_hash != '';
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_permissions_unique_domain_scope ON permissions (user_id, domain_id) WHERE local_part IS NULL;
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_permissions_unique_mailbox_scope ON permissions (user_id, domain_id, local_part) WHERE local_part IS NOT NULL;
-        CREATE INDEX IF NOT EXISTS idx_permissions_user_scope ON permissions (user_id, status, domain_id, local_part);
-        CREATE INDEX IF NOT EXISTS idx_permissions_domain_scope ON permissions (domain_id, status, local_part, role);
+        CREATE INDEX IF NOT EXISTS idx_permissions_user_scope ON permissions (user_id, status, domain_id);
+        CREATE INDEX IF NOT EXISTS idx_permissions_domain_scope ON permissions (domain_id, status);
         CREATE INDEX IF NOT EXISTS idx_admins_created_at ON admins (created_at);
         CREATE INDEX IF NOT EXISTS idx_user_sessions_user_expiry ON user_sessions (user_id, expires_at DESC);
         CREATE INDEX IF NOT EXISTS idx_user_sessions_expiry ON user_sessions (expires_at);

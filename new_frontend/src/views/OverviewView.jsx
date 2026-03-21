@@ -3,21 +3,10 @@ import { Copy, Globe2, KeyRound, RefreshCcw, Wrench } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import { changeMyPassword, getHealth, pruneRawMime, rotateMyApiKey, updateMe } from '../lib/api.js'
 import { cn, formatApiError, formatDateTime, formatRelativeTime, getPermissionScopeLabel, normalizeOptional } from '../lib/format.js'
-import { Badge, Button, CodeBlock, Field, Input, ModalShell, Panel } from '../components/ui.jsx'
+import { AutoRefreshButton, Badge, Button, CodeBlock, Field, Input, ModalShell, Panel } from '../components/ui.jsx'
+import { useAutoRefresh } from '../hooks/useAutoRefresh.js'
 
 const COMPACT_INPUT_CLASS = 'min-h-[44px] rounded-[0.95rem] px-4 py-2.5 text-sm'
-
-function getRoleTone(role) {
-  if (role === 'admin') {
-    return 'accent'
-  }
-
-  if (role === 'operator') {
-    return 'success'
-  }
-
-  return 'neutral'
-}
 
 function buildDomainSummaries(accessibleDomains, permissions) {
   const domainMap = new Map()
@@ -27,13 +16,6 @@ function buildDomainSummaries(accessibleDomains, permissions) {
       domain,
       permissions: [],
       activeCount: 0,
-      domainScope: false,
-      mailboxCount: 0,
-      roles: {
-        admin: 0,
-        operator: 0,
-        viewer: 0,
-      },
     })
   })
 
@@ -44,13 +26,6 @@ function buildDomainSummaries(accessibleDomains, permissions) {
         domain: domainKey,
         permissions: [],
         activeCount: 0,
-        domainScope: false,
-        mailboxCount: 0,
-        roles: {
-          admin: 0,
-          operator: 0,
-          viewer: 0,
-        },
       })
     }
 
@@ -59,16 +34,6 @@ function buildDomainSummaries(accessibleDomains, permissions) {
 
     if (permission.status === 'active') {
       summary.activeCount += 1
-    }
-
-    if (permission.localPart) {
-      summary.mailboxCount += 1
-    } else {
-      summary.domainScope = true
-    }
-
-    if (summary.roles[permission.role] !== undefined) {
-      summary.roles[permission.role] += 1
     }
   })
 
@@ -137,18 +102,12 @@ export default function OverviewView({
     void loadHealth()
   }, [])
 
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      void loadHealth({
-        showLoading: false,
-        showError: false,
-      })
-    }, 10000)
-
-    return () => {
-      window.clearInterval(intervalId)
-    }
-  }, [])
+  const refreshNow = useAutoRefresh(async () => {
+    await loadHealth({
+      showLoading: false,
+      showError: false,
+    })
+  }, 10000)
 
   async function handleProfileSubmit(event) {
     event.preventDefault()
@@ -191,7 +150,7 @@ export default function OverviewView({
 
     try {
       await onRefreshSession()
-      toast.success('Đã gia hạn session')
+      toast.success('Đã gia hạn phiên')
     } catch (error) {
       toast.error(formatApiError(error))
     } finally {
@@ -204,7 +163,7 @@ export default function OverviewView({
 
     try {
       const result = await pruneRawMime(token)
-      toast.success(result.skipped ? 'Prune bị bỏ qua theo interval' : `Đã prune ${result.updated} bản ghi raw MIME`)
+      toast.success(result.skipped ? 'Dọn MIME gốc bị bỏ qua theo chu kỳ' : `Đã dọn ${result.updated} bản ghi MIME gốc`)
     } catch (error) {
       toast.error(formatApiError(error))
     } finally {
@@ -241,27 +200,27 @@ export default function OverviewView({
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge tone="accent">Auto refresh 10s</Badge>
-          {loadingHealth ? <Badge tone="warning">Đang đồng bộ health…</Badge> : null}
-          <Badge tone={health?.ok ? 'success' : 'warning'}>{health?.ok ? 'Healthy' : 'Health unknown'}</Badge>
+          <AutoRefreshButton onClick={refreshNow} />
+          {loadingHealth ? <Badge tone="warning">Đang đồng bộ trạng thái…</Badge> : null}
+          <Badge tone={health?.ok ? 'success' : 'warning'}>{health?.ok ? 'Hệ thống ổn định' : 'Chưa rõ trạng thái'}</Badge>
           {health?.storage?.engine ? <Badge tone="neutral">{health.storage.engine}</Badge> : null}
         </div>
 
         <Button size="sm" variant="secondary" icon={RefreshCcw} loading={refreshingSession} onClick={handleSessionRefresh}>
-          Gia hạn session
+          Gia hạn phiên
         </Button>
       </div>
 
       <Panel
-        eyebrow="Profile"
+        eyebrow="Hồ sơ"
         title={`@${account.username}`}
         tone="sage"
         action={(
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={account.status === 'active' ? 'success' : 'warning'}>{account.status}</Badge>
-            {account.isAdmin ? <Badge tone="accent">Global admin</Badge> : null}
+            {account.isAdmin ? <Badge tone="accent">Admin toàn cục</Badge> : null}
             <Button size="sm" variant="secondary" onClick={() => setShowPasswordForm((current) => !current)}>
-              {showPasswordForm ? 'Ẩn password' : 'Đổi password'}
+              {showPasswordForm ? 'Ẩn đổi mật khẩu' : 'Đổi mật khẩu'}
             </Button>
             <Button
               size="sm"
@@ -278,26 +237,26 @@ export default function OverviewView({
         <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-[1.1rem] border border-[var(--line)] bg-white/72 px-4 py-3">
-              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[var(--muted)]">Display</p>
-              <p className="mt-1 text-sm font-semibold text-[var(--ink)]">{account.displayName || 'N/A'}</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[var(--muted)]">Tên hiển thị</p>
+              <p className="mt-1 text-sm font-semibold text-[var(--ink)]">{account.displayName || 'Chưa đặt'}</p>
             </div>
             <div className="rounded-[1.1rem] border border-[var(--line)] bg-white/72 px-4 py-3">
               <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[var(--muted)]">Telegram</p>
-              <p className="mt-1 text-sm font-semibold text-[var(--ink)]">{account.telegramId || 'N/A'}</p>
+              <p className="mt-1 text-sm font-semibold text-[var(--ink)]">{account.telegramId || 'Chưa đặt'}</p>
             </div>
             <div className="rounded-[1.1rem] border border-[var(--line)] bg-white/72 px-4 py-3">
-              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[var(--muted)]">Session expires</p>
-              <p className="mt-1 text-sm font-semibold text-[var(--ink)]">{sessionExpiresAt ? formatDateTime(sessionExpiresAt) : 'N/A'}</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[var(--muted)]">Hết hạn phiên</p>
+              <p className="mt-1 text-sm font-semibold text-[var(--ink)]">{sessionExpiresAt ? formatDateTime(sessionExpiresAt) : 'Chưa rõ'}</p>
             </div>
             <div className="rounded-[1.1rem] border border-[var(--line)] bg-white/72 px-4 py-3">
-              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[var(--muted)]">Last seen</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[var(--muted)]">Lần cuối</p>
               <p className="mt-1 text-sm font-semibold text-[var(--ink)]">{formatRelativeTime(account.lastSeenAt)}</p>
             </div>
           </div>
 
           <div className="grid gap-4">
             <form className="grid gap-3" onSubmit={handleProfileSubmit}>
-              <Field label="Display name">
+              <Field label="Tên hiển thị">
                 <Input
                   className={COMPACT_INPUT_CLASS}
                   value={profileForm.displayName}
@@ -354,10 +313,10 @@ export default function OverviewView({
 
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <Panel
-          eyebrow="Overview"
-          title="Domain access"
+          eyebrow="Tổng quan"
+          title="Domain được cấp"
           tone="slate"
-          action={<Badge tone="accent">{domainSummaries.length} domains</Badge>}
+        action={<Badge tone="accent">{domainSummaries.length} domain</Badge>}
         >
           {domainSummaries.length ? (
             <div className="grid gap-2.5">
@@ -371,22 +330,21 @@ export default function OverviewView({
                       </div>
                       <p className="mt-1 text-xs text-[var(--muted)]">
                         {summary.permissions.length
-                          ? `${summary.domainScope ? 'Domain scope' : 'Mailbox scope'} · ${summary.mailboxCount} mailbox`
-                          : 'Accessible qua auth/me'}
+                          ? `${summary.activeCount} quyền đang hoạt động`
+                          : 'Truy cập từ phiên hiện tại'}
                       </p>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      {summary.roles.admin ? <Badge tone="accent">a {summary.roles.admin}</Badge> : null}
-                      {summary.roles.operator ? <Badge tone="success">o {summary.roles.operator}</Badge> : null}
-                      {summary.roles.viewer ? <Badge tone="neutral">v {summary.roles.viewer}</Badge> : null}
+                      {summary.permissions.length ? <Badge tone="success">Vận hành</Badge> : null}
+                      <Badge tone="neutral">{summary.permissions.length}</Badge>
                     </div>
                   </div>
 
                   {summary.permissions.length ? (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {summary.permissions.slice(0, 4).map((permission) => (
-                        <Badge key={permission.id} tone={getRoleTone(permission.role)}>
+                        <Badge key={permission.id} tone="success">
                           {getPermissionScopeLabel(permission)}
                         </Badge>
                       ))}
@@ -398,36 +356,40 @@ export default function OverviewView({
             </div>
           ) : (
             <div className="rounded-[1.35rem] border border-dashed border-[var(--line)] bg-white/58 px-5 py-6 text-sm text-[var(--muted)]">
-              Account hiện chưa có domain khả dụng.
+              Tài khoản hiện chưa có domain khả dụng.
             </div>
           )}
         </Panel>
 
         <Panel
           eyebrow="Ops"
-          title="System"
+          title="Hệ thống"
           tone="sand"
-          action={account.isAdmin ? <Badge tone="accent">Admin tools</Badge> : <Badge tone="neutral">Read only</Badge>}
+          action={account.isAdmin ? <Badge tone="accent">Công cụ admin</Badge> : <Badge tone="neutral">Chỉ xem</Badge>}
         >
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-[1.1rem] border border-[var(--line)] bg-white/72 px-4 py-3">
-                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[var(--muted)]">Service</p>
-                <p className="mt-1 text-sm font-semibold text-[var(--ink)]">{health?.service || 'Unknown'}</p>
+                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[var(--muted)]">Dịch vụ</p>
+                <p className="mt-1 text-sm font-semibold text-[var(--ink)]">{health?.service || 'Không rõ'}</p>
               </div>
               <div className="rounded-[1.1rem] border border-[var(--line)] bg-white/72 px-4 py-3">
-                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[var(--muted)]">Environment</p>
-                <p className="mt-1 text-sm font-semibold text-[var(--ink)]">{health?.nodeEnv || 'Unknown'}</p>
+                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[var(--muted)]">Môi trường</p>
+                <p className="mt-1 text-sm font-semibold text-[var(--ink)]">{health?.nodeEnv || 'Không rõ'}</p>
+              </div>
+              <div className="rounded-[1.1rem] border border-[var(--line)] bg-white/72 px-4 py-3">
+                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[var(--muted)]">Giờ hệ thống</p>
+                <p className="mt-1 text-sm font-semibold text-[var(--ink)]">{health?.systemTime ? formatDateTime(health.systemTime) : 'Không rõ'}</p>
               </div>
             </div>
 
             {account.isAdmin ? (
               <Button size="sm" icon={Wrench} loading={pruning} onClick={handlePrune}>
-                Chạy prune raw MIME
+                Dọn MIME gốc
               </Button>
             ) : (
               <div className={cn('text-sm text-[var(--muted)]')}>
-                Chỉ global admin mới được chạy maintenance.
+                Chỉ admin toàn cục mới được chạy tác vụ bảo trì.
               </div>
             )}
           </div>
@@ -442,13 +404,13 @@ export default function OverviewView({
         description="Key này chỉ hiện lại đúng một lần. Lưu lại trước khi đóng."
         tone="ember"
         size="md"
-        action={<Badge tone="accent">Rotate complete</Badge>}
+        action={<Badge tone="accent">Đã tạo mới</Badge>}
       >
         <div className="space-y-4">
           <CodeBlock value={generatedApiKey || 'N/A'} />
           <div className="flex flex-wrap gap-2">
             <Button size="sm" icon={Copy} onClick={handleCopyApiKey} disabled={!generatedApiKey}>
-              Copy API key
+              Sao chép API key
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setApiKeyModalOpen(false)}>
               Đóng

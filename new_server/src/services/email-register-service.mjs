@@ -1,6 +1,7 @@
 import { getDb, withTransaction } from '../db/index.mjs';
 import { ensureMailboxPermission, hasGlobalPermission } from './account-service.mjs';
 import { parseEmailAddress } from '../utils/email.mjs';
+import { assertRegisteredMailboxPermission } from './email-service.mjs';
 import { HttpError } from '../utils/http.mjs';
 
 function nowIso() {
@@ -19,6 +20,14 @@ function parseNumericId(value, label = 'id') {
 function resolveOwnerUserId(auth, filters = {}) {
     if (hasGlobalPermission(auth) && filters.ownerUserId) {
         return parseNumericId(filters.ownerUserId, 'owner user id');
+    }
+
+    return parseNumericId(auth?.userId, 'user id');
+}
+
+function resolveMutationOwnerUserId(auth, payload = {}) {
+    if (hasGlobalPermission(auth) && payload.ownerUserId !== undefined && payload.ownerUserId !== null && payload.ownerUserId !== '') {
+        return parseNumericId(payload.ownerUserId, 'owner user id');
     }
 
     return parseNumericId(auth?.userId, 'user id');
@@ -105,10 +114,13 @@ async function reindexGroupPositionsTx(db, groupIds) {
     }
 }
 
-export async function listEmailRegisters(config, auth, filters = {}) {
+export async function listEmailRegisters(config, auth, filters = {}, pagination = {}) {
     const ownerUserId = resolveOwnerUserId(auth, filters);
     const db = await getDb(config);
-    const rows = await db.all(
+    const limit = pagination.limit || 50;
+    const offset = pagination.offset || 0;
+    const [rows, totalRow] = await Promise.all([
+        db.all(
         `
             SELECT
                 er.*,
@@ -122,11 +134,24 @@ export async function listEmailRegisters(config, auth, filters = {}) {
             WHERE er.owner_user_id = ?
             GROUP BY er.id, u.username, u.display_name
             ORDER BY er.updated_at DESC, er.id DESC
+            LIMIT ? OFFSET ?
         `,
-        [ownerUserId]
-    );
+            [ownerUserId, limit, offset]
+        ),
+        db.get(
+            `
+                SELECT COUNT(*) AS total
+                FROM email_registers er
+                WHERE er.owner_user_id = ?
+            `,
+            [ownerUserId]
+        )
+    ]);
 
-    return rows.map(mapEmailRegisterRow);
+    return {
+        total: totalRow?.total || 0,
+        registrations: rows.map(mapEmailRegisterRow)
+    };
 }
 
 export async function createEmailRegister(config, auth, payload) {
@@ -135,9 +160,17 @@ export async function createEmailRegister(config, auth, payload) {
         throw new HttpError(400, 'Valid email address is required');
     }
 
-    await ensureMailboxPermission(config, auth, parsedAddress.email, 'view');
+    const ownerUserId = resolveMutationOwnerUserId(auth, payload);
 
-    const ownerUserId = parseNumericId(auth?.userId, 'user id');
+    if (ownerUserId === parseNumericId(auth?.userId, 'user id')) {
+        await ensureMailboxPermission(config, auth, parsedAddress.email, 'view');
+    } else {
+        await assertRegisteredMailboxPermission(config, auth, parsedAddress.email, 'view', {
+            userId: ownerUserId,
+            requireRegistration: false
+        });
+    }
+
     let registrationId = null;
 
     await withTransaction(config, async (db) => {

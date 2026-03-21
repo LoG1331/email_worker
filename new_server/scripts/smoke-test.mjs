@@ -137,6 +137,8 @@ async function main() {
         assertStatus(health, 200, 'health');
         assert.equal(health.body.ok, true);
         assert.equal(health.body.service, 'new_server');
+        assert.ok(typeof health.body.systemTime === 'string');
+        assert.ok(Number.isInteger(health.body.systemTimeMs));
         assert.equal(health.body.storage.engine, 'sqlite');
         assert.equal(health.body.storage.ready, true);
         assert.equal('sqlitePath' in health.body, false);
@@ -163,6 +165,26 @@ async function main() {
         });
         assertStatus(createDomain, 201, 'create domain');
         assert.equal(createDomain.body.domain.domain, 'example.com');
+
+        const createInvalidDomain = await request(baseUrl, '/v1/domains', {
+            method: 'POST',
+            token: adminToken,
+            json: {
+                domain: '-invalid..domain-',
+                description: 'Should fail'
+            }
+        });
+        assertStatus(createInvalidDomain, 400, 'create invalid domain');
+
+        const registerAdminMailbox = await request(baseUrl, '/v1/email-registers', {
+            method: 'POST',
+            token: adminToken,
+            json: {
+                emailAddress: 'admin@example.com'
+            }
+        });
+        assertStatus(registerAdminMailbox, 201, 'register admin mailbox');
+        assert.equal(registerAdminMailbox.body.registration.emailAddress, 'admin@example.com');
 
         const createUser = await request(baseUrl, '/v1/users', {
             method: 'POST',
@@ -196,9 +218,7 @@ async function main() {
             token: adminToken,
             json: {
                 userId: aliceUserId,
-                domain: 'example.com',
-                localPart: 'alice',
-                role: 'operator'
+                domain: 'example.com'
             }
         });
         assertStatus(createPermission, 201, 'create permission');
@@ -210,8 +230,7 @@ async function main() {
             token: adminToken,
             json: {
                 userId: bobUserId,
-                domain: 'example.com',
-                role: 'viewer'
+                domain: 'example.com'
             }
         });
         assertStatus(createBobDomainPermission, 201, 'create bob domain permission');
@@ -224,12 +243,11 @@ async function main() {
             json: {
                 userId: bobUserId,
                 domain: 'example.com',
-                role: 'admin'
+                status: 'active'
             }
         });
         assertStatus(upsertBobDomainPermission, 201, 'upsert bob domain permission');
         assert.equal(upsertBobDomainPermission.body.permission.id, bobPermissionId);
-        assert.equal(upsertBobDomainPermission.body.permission.role, 'admin');
 
         const listBobPermissions = await request(baseUrl, `/v1/permissions?userId=${bobUserId}&domain=example.com`, {
             token: adminToken
@@ -237,8 +255,6 @@ async function main() {
         assertStatus(listBobPermissions, 200, 'list bob permissions');
         assert.equal(listBobPermissions.body.count, 1);
         assert.equal(listBobPermissions.body.permissions[0].id, bobPermissionId);
-        assert.equal(listBobPermissions.body.permissions[0].localPart, null);
-        assert.equal(listBobPermissions.body.permissions[0].role, 'admin');
 
         const ingestAliceEmail = await request(baseUrl, '/v1/inbound/email', {
             method: 'POST',
@@ -351,6 +367,54 @@ async function main() {
         assert.equal(aliceInbox.body.count, 1);
         const allowedEmailId = aliceInbox.body.emails[0].id;
         assert.ok(allowedEmailId);
+        const firstAliceReceivedAt = aliceInbox.body.emails[0].receivedAt;
+        assert.ok(firstAliceReceivedAt);
+        const firstAliceReceivedAtMs = Date.parse(firstAliceReceivedAt);
+        assert.ok(Number.isFinite(firstAliceReceivedAtMs));
+
+        const ingestAliceEmailSecond = await request(baseUrl, '/v1/inbound/email', {
+            method: 'POST',
+            token: config.inboundAuthToken,
+            body: createMimeMessage({
+                to: 'alice@example.com',
+                subject: 'Alice smoke email 2',
+                messageId: 'smoke-alice-2@example.net',
+                text: 'Hello Alice again'
+            }),
+            headers: {
+                'Content-Type': 'message/rfc822',
+                'X-Email-Envelope-To': 'alice@example.com',
+                'X-Email-Envelope-From': 'sender@example.net',
+                'X-Email-Worker-Name': 'smoke-worker'
+            }
+        });
+        assertStatus(ingestAliceEmailSecond, 202, 'ingest second alice email');
+
+        const aliceInboxCursorPage1 = await request(baseUrl, '/v1/inboxes/alice%40example.com?limit=1', {
+            token: aliceToken
+        });
+        assertStatus(aliceInboxCursorPage1, 200, 'alice inbox cursor page 1');
+        assert.equal(aliceInboxCursorPage1.body.count, 1);
+        assert.equal(aliceInboxCursorPage1.body.hasMore, true);
+        assert.ok(aliceInboxCursorPage1.body.nextCursor);
+        const latestAliceEmailId = aliceInboxCursorPage1.body.emails[0].id;
+        assert.ok(latestAliceEmailId);
+
+        const aliceInboxCursorPage2 = await request(baseUrl, `/v1/inboxes/alice%40example.com?limit=1&cursor=${encodeURIComponent(aliceInboxCursorPage1.body.nextCursor)}`, {
+            token: aliceToken
+        });
+        assertStatus(aliceInboxCursorPage2, 200, 'alice inbox cursor page 2');
+        assert.equal(aliceInboxCursorPage2.body.count, 1);
+        assert.equal(aliceInboxCursorPage2.body.emails[0].id, allowedEmailId);
+        assert.equal(aliceInboxCursorPage2.body.hasMore, false);
+        assert.equal(aliceInboxCursorPage2.body.nextCursor, null);
+
+        const aliceInboxSince = await request(baseUrl, `/v1/inboxes/alice%40example.com?stime=${firstAliceReceivedAtMs}`, {
+            token: aliceToken
+        });
+        assertStatus(aliceInboxSince, 200, 'alice inbox since time');
+        assert.equal(aliceInboxSince.body.count, 1);
+        assert.equal(aliceInboxSince.body.emails[0].subject, 'Alice smoke email 2');
 
         const secretInbox = await request(baseUrl, '/v1/inboxes/secret%40example.com', {
             token: adminToken
@@ -359,19 +423,6 @@ async function main() {
         assert.equal(secretInbox.body.count, 1);
         const deniedEmailId = secretInbox.body.emails[0].id;
         assert.ok(deniedEmailId);
-
-        const batchFetch = await request(baseUrl, '/v1/emails/batch', {
-            method: 'POST',
-            token: aliceToken,
-            json: {
-                emailIds: [allowedEmailId, deniedEmailId]
-            }
-        });
-        assertStatus(batchFetch, 200, 'batch fetch');
-        assert.equal(batchFetch.body.count, 1);
-        assert.deepEqual(batchFetch.body.missingIds, []);
-        assert.deepEqual(batchFetch.body.deniedIds, [deniedEmailId]);
-        assert.deepEqual(batchFetch.body.emails.map(email => email.id), [allowedEmailId]);
 
         const createGroup = await request(baseUrl, '/v1/groups', {
             method: 'POST',
@@ -386,15 +437,47 @@ async function main() {
         const groupId = createGroup.body.group.id;
         assert.ok(groupId);
 
+        const adminGroupList = await request(baseUrl, '/v1/groups', {
+            token: adminToken
+        });
+        assertStatus(adminGroupList, 200, 'admin list own groups only');
+        assert.equal(adminGroupList.body.count, 0);
+
+        const adminReadAliceGroup = await request(baseUrl, `/v1/groups/${groupId}`, {
+            token: adminToken
+        });
+        assertStatus(adminReadAliceGroup, 404, 'admin cannot read another user group');
+
         const addGroupEmails = await request(baseUrl, `/v1/groups/${groupId}/emails`, {
             method: 'POST',
             token: aliceToken,
             json: {
-                emailIds: [allowedEmailId]
+                emailIds: [allowedEmailId, latestAliceEmailId]
             }
         });
         assertStatus(addGroupEmails, 201, 'add group emails');
-        assert.equal(addGroupEmails.body.count, 1);
+        assert.equal(addGroupEmails.body.count, 2);
+        assert.equal(addGroupEmails.body.hasMore, false);
+        assert.equal(addGroupEmails.body.nextCursor, null);
+
+        const fetchGroupEmails = await request(baseUrl, `/v1/groups/${groupId}/emails?limit=1`, {
+            token: aliceToken
+        });
+        assertStatus(fetchGroupEmails, 200, 'fetch group emails');
+        assert.equal(fetchGroupEmails.body.group.id, groupId);
+        assert.equal(fetchGroupEmails.body.count, 1);
+        assert.deepEqual(fetchGroupEmails.body.emails.map(email => email.id), [allowedEmailId]);
+        assert.equal(fetchGroupEmails.body.hasMore, true);
+        assert.ok(fetchGroupEmails.body.nextCursor);
+
+        const fetchGroupEmailsPage2 = await request(baseUrl, `/v1/groups/${groupId}/emails?limit=1&cursor=${encodeURIComponent(fetchGroupEmails.body.nextCursor)}`, {
+            token: aliceToken
+        });
+        assertStatus(fetchGroupEmailsPage2, 200, 'fetch group emails page 2');
+        assert.equal(fetchGroupEmailsPage2.body.count, 1);
+        assert.deepEqual(fetchGroupEmailsPage2.body.emails.map(email => email.id), [latestAliceEmailId]);
+        assert.equal(fetchGroupEmailsPage2.body.hasMore, false);
+        assert.equal(fetchGroupEmailsPage2.body.nextCursor, null);
 
         const deletePermission = await request(baseUrl, `/v1/permissions/${permissionId}`, {
             method: 'DELETE',
@@ -406,15 +489,16 @@ async function main() {
             token: aliceToken
         });
         assertStatus(firstGroupFetch, 409, 'group fetch after permission revoke');
-        assert.deepEqual(firstGroupFetch.body.details.deniedIds, [allowedEmailId]);
-        assert.deepEqual(firstGroupFetch.body.details.prunedIds, [allowedEmailId]);
+        assert.deepEqual(firstGroupFetch.body.details.deniedIds, [allowedEmailId, latestAliceEmailId]);
+        assert.deepEqual(firstGroupFetch.body.details.prunedIds, [allowedEmailId, latestAliceEmailId]);
 
         const secondGroupFetch = await request(baseUrl, `/v1/groups/${groupId}/emails`, {
             token: aliceToken
         });
         assertStatus(secondGroupFetch, 200, 'group fetch after prune');
         assert.equal(secondGroupFetch.body.count, 0);
-        assert.equal(secondGroupFetch.body.total, 0);
+        assert.equal(secondGroupFetch.body.hasMore, false);
+        assert.equal(secondGroupFetch.body.nextCursor, null);
 
         console.log('new_server smoke test passed');
     } finally {

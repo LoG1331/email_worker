@@ -9,6 +9,7 @@ import {
     updatePermission,
     upsertPermission
 } from '../services/account-service.mjs';
+import { parsePagination } from '../utils/http.mjs';
 
 const permissionCreateSchema = z.object({
     userId: z.union([z.number().int().positive(), z.string().min(1)]).optional(),
@@ -16,18 +17,15 @@ const permissionCreateSchema = z.object({
     displayName: z.string().optional(),
     telegramId: z.union([z.string(), z.null()]).optional(),
     domain: z.string().min(1),
-    localPart: z.union([z.string(), z.null()]).optional(),
-    role: z.enum(['viewer', 'operator', 'admin']),
     status: z.enum(['active', 'disabled']).optional()
 }).refine(payload => payload.userId !== undefined || payload.username !== undefined, {
     message: 'userId or username is required'
 });
 
 const permissionUpdateSchema = z.object({
-    role: z.enum(['viewer', 'operator', 'admin']).optional(),
     status: z.enum(['active', 'disabled']).optional()
-}).refine(payload => payload.role !== undefined || payload.status !== undefined, {
-    message: 'role or status is required'
+}).refine(payload => payload.status !== undefined, {
+    message: 'status is required'
 });
 
 export function createPermissionsRouter(config) {
@@ -35,17 +33,19 @@ export function createPermissionsRouter(config) {
 
     router.get('/', asyncHandler(async (req, res) => {
         assertSuperAdmin(req.auth);
-        const permissions = await listPermissions(config, {
+        const result = await listPermissions(config, {
             userId: req.query.userId ? String(req.query.userId) : '',
             username: req.query.username ? String(req.query.username) : '',
             domain: req.query.domain ? String(req.query.domain) : '',
-            localPart: req.query.localPart ? String(req.query.localPart) : '',
-            role: req.query.role ? String(req.query.role) : '',
             status: req.query.status ? String(req.query.status) : ''
+        }, {
+            limit: parsePagination(req.query.limit, 50, { min: 1, max: 200 }),
+            offset: parsePagination(req.query.offset, 0, { min: 0, max: 100000 })
         });
         res.json({
-            count: permissions.length,
-            permissions,
+            total: result.total,
+            count: result.permissions.length,
+            permissions: result.permissions,
             requestId: req.requestId
         });
     }));

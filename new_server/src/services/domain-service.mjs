@@ -34,8 +34,7 @@ function mapDomainRow(row) {
         inboundEnabled: Boolean(row.inbound_enabled),
         isDefault: Boolean(row.is_default),
         counts: {
-            domainPermissions: row.domain_permission_count || 0,
-            mailboxPermissions: row.mailbox_permission_count || 0,
+            permissionCount: row.permission_count || 0,
             emails: row.email_count || 0
         },
         createdAt: row.created_at,
@@ -57,48 +56,107 @@ async function getDomainRecord(db, domainName) {
     return row;
 }
 
-export async function listDomains(config) {
+export async function listDomains(config, options = {}) {
     const db = await getDb(config);
-    const rows = await db.all(
+    const conditions = [];
+    const values = [];
+    const limit = options.limit || 50;
+    const offset = options.offset || 0;
+
+    if (Array.isArray(options.allowedDomains)) {
+        const normalizedDomains = options.allowedDomains
+            .map(domain => normalizeDomain(domain))
+            .filter(Boolean);
+
+        if (!normalizedDomains.length) {
+            return {
+                total: 0,
+                domains: []
+            };
+        }
+
+        conditions.push(`d.name IN (${normalizedDomains.map(() => '?').join(', ')})`);
+        values.push(...normalizedDomains);
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const [rows, totalRow] = await Promise.all([
+        db.all(
         `
             SELECT
                 d.*,
-                COALESCE(dp.domain_permission_count, 0) AS domain_permission_count,
-                COALESCE(mp.mailbox_permission_count, 0) AS mailbox_permission_count,
+                COALESCE(p.permission_count, 0) AS permission_count,
                 COALESCE(e.email_count, 0) AS email_count
             FROM domains d
             LEFT JOIN (
-                SELECT domain_id, COUNT(*) AS domain_permission_count
+                SELECT domain_id, COUNT(*) AS permission_count
                 FROM permissions
                 WHERE status = 'active'
-                  AND local_part IS NULL
                 GROUP BY domain_id
-            ) dp ON dp.domain_id = d.id
-            LEFT JOIN (
-                SELECT domain_id, COUNT(*) AS mailbox_permission_count
-                FROM permissions
-                WHERE status = 'active'
-                  AND local_part IS NOT NULL
-                GROUP BY domain_id
-            ) mp ON mp.domain_id = d.id
+            ) p ON p.domain_id = d.id
             LEFT JOIN (
                 SELECT domain_id, COUNT(*) AS email_count
                 FROM emails
                 GROUP BY domain_id
             ) e ON e.domain_id = d.id
+            ${whereClause}
             ORDER BY d.is_default DESC, d.name ASC
-        `
-    );
+            LIMIT ? OFFSET ?
+        `,
+            [...values, limit, offset]
+        ),
+        db.get(
+            `
+                SELECT COUNT(*) AS total
+                FROM domains d
+                ${whereClause}
+            `,
+            values
+        )
+    ]);
 
-    return rows.map(mapDomainRow);
+    return {
+        total: totalRow?.total || 0,
+        domains: rows.map(mapDomainRow)
+    };
 }
 
 export async function getDomain(config, domainName) {
     const normalizedDomain = normalizeDomain(domainName);
-    const domains = await listDomains(config);
-    return domains.find(domain => domain.domain === normalizedDomain) || (() => {
+    if (!normalizedDomain) {
+        throw new HttpError(400, 'Valid domain is required');
+    }
+
+    const db = await getDb(config);
+    const row = await db.get(
+        `
+            SELECT
+                d.*,
+                COALESCE(p.permission_count, 0) AS permission_count,
+                COALESCE(e.email_count, 0) AS email_count
+            FROM domains d
+            LEFT JOIN (
+                SELECT domain_id, COUNT(*) AS permission_count
+                FROM permissions
+                WHERE status = 'active'
+                GROUP BY domain_id
+            ) p ON p.domain_id = d.id
+            LEFT JOIN (
+                SELECT domain_id, COUNT(*) AS email_count
+                FROM emails
+                GROUP BY domain_id
+            ) e ON e.domain_id = d.id
+            WHERE d.name = ?
+            LIMIT 1
+        `,
+        [normalizedDomain]
+    );
+
+    if (!row) {
         throw new HttpError(404, 'Domain not found');
-    })();
+    }
+
+    return mapDomainRow(row);
 }
 
 export async function upsertDomain(config, payload) {

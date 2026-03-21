@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
-import { LoaderCircle, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, LoaderCircle, X } from 'lucide-react'
 import { cn } from '../lib/format.js'
+import { buildPaginationMeta } from '../lib/pagination.js'
 
 const PANEL_TONE_CLASS = {
   neutral: 'panel-tone-neutral',
@@ -146,6 +147,139 @@ export function Badge({ tone = 'neutral', children, className }) {
   }[tone]
 
   return <span className={cn('pill', toneClass, className)}>{children}</span>
+}
+
+export function AutoRefreshButton({ onClick, className, children = 'Tự làm mới 10s' }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'pill border-transparent bg-[var(--accent-soft)] text-[var(--accent-strong)] transition hover:bg-[rgba(19,93,102,0.18)]',
+        className,
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+export function CompactPagination({
+  total = 0,
+  count = 0,
+  offset = 0,
+  limit = 50,
+  onPrev,
+  onNext,
+  onLimitChange,
+  limitOptions = [25, 50, 100],
+  className,
+}) {
+  const { pageStart, pageEnd, hasPrev, hasNext } = buildPaginationMeta({
+    total,
+    count,
+    offset,
+    limit,
+  })
+
+  return (
+    <div className={cn('flex flex-wrap items-center gap-2', className)}>
+      <Badge tone="neutral">
+        {pageStart}-{pageEnd} / {total}
+      </Badge>
+      {onLimitChange ? (
+        <label className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-white/80 px-3 text-sm font-semibold text-[var(--ink)]">
+          <span className="text-[var(--muted)]">Mức tải</span>
+          <select
+            value={String(limit)}
+            onChange={(event) => onLimitChange(Number(event.target.value))}
+            className="h-9 rounded-full bg-transparent pr-1 text-sm outline-none"
+          >
+            {limitOptions.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <Badge tone="neutral">mức tải {limit}</Badge>
+      )}
+      <button
+        type="button"
+        onClick={onPrev}
+        disabled={!hasPrev}
+        className={cn(
+          'inline-flex h-9 items-center gap-1 rounded-full border px-3 text-sm font-semibold transition',
+          hasPrev
+            ? 'border-[var(--line)] bg-white/80 text-[var(--ink)] hover:bg-white'
+            : 'cursor-not-allowed border-[var(--line)] bg-white/50 text-[var(--muted)]/60',
+        )}
+      >
+        <ChevronLeft className="h-4 w-4" />
+        <span>Trước</span>
+      </button>
+      <button
+        type="button"
+        onClick={onNext}
+        disabled={!hasNext}
+        className={cn(
+          'inline-flex h-9 items-center gap-1 rounded-full border px-3 text-sm font-semibold transition',
+          hasNext
+            ? 'border-[var(--line)] bg-white/80 text-[var(--ink)] hover:bg-white'
+            : 'cursor-not-allowed border-[var(--line)] bg-white/50 text-[var(--muted)]/60',
+        )}
+      >
+        <span>Sau</span>
+        <ChevronRight className="h-4 w-4" />
+      </button>
+    </div>
+  )
+}
+
+export function CursorPagination({
+  page = 1,
+  count = 0,
+  hasPrev = false,
+  hasNext = false,
+  onPrev,
+  onNext,
+  className,
+}) {
+  return (
+    <div className={cn('flex flex-wrap items-center gap-2', className)}>
+      <Badge tone="neutral">Trang {page}</Badge>
+      <Badge tone="neutral">{count} mục</Badge>
+      <button
+        type="button"
+        onClick={onPrev}
+        disabled={!hasPrev}
+        className={cn(
+          'inline-flex h-9 items-center gap-1 rounded-full border px-3 text-sm font-semibold transition',
+          hasPrev
+            ? 'border-[var(--line)] bg-white/80 text-[var(--ink)] hover:bg-white'
+            : 'cursor-not-allowed border-[var(--line)] bg-white/50 text-[var(--muted)]/60',
+        )}
+      >
+        <ChevronLeft className="h-4 w-4" />
+        <span>Trước</span>
+      </button>
+      <button
+        type="button"
+        onClick={onNext}
+        disabled={!hasNext}
+        className={cn(
+          'inline-flex h-9 items-center gap-1 rounded-full border px-3 text-sm font-semibold transition',
+          hasNext
+            ? 'border-[var(--line)] bg-white/80 text-[var(--ink)] hover:bg-white'
+            : 'cursor-not-allowed border-[var(--line)] bg-white/50 text-[var(--muted)]/60',
+        )}
+      >
+        <span>Sau</span>
+        <ChevronRight className="h-4 w-4" />
+      </button>
+    </div>
+  )
 }
 
 export function MetricCard({ label, value, helper, icon: Icon, tone = 'accent' }) {

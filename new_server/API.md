@@ -1,246 +1,56 @@
-# New Server API
+# new_server API
 
-API docs này bám theo code backend hiện tại trong `new_server/src`.
-Mục tiêu là đủ chính xác để build lại frontend mà không phải đoán contract.
+Tài liệu này dành cho frontend mới. Nguồn chuẩn máy đọc vẫn là [`new_server/openapi.json`](./openapi.json).
 
-Docs machine-readable nằm ở `new_server/openapi.json`.
+## Tổng quan
 
-## Base
-
-- Base URL: `http(s)://<host>:<port>`
-- JSON body mặc định cho mọi route trừ inbound raw MIME
+- Base URL dev: `http://127.0.0.1:3001`
+- Auth web: `Authorization: Bearer <sessionToken>`
+- Content-Type: `application/json` cho hầu hết route
 - Mọi response đều có `requestId`
-- Header `x-request-id` được echo lại nếu client gửi vào, nếu không server tự tạo
+- Frontend nên dùng JWT session cho toàn bộ flow web
+
+## Mô hình hiện tại
+
+- `users`: tài khoản đăng nhập web bằng `username + password`
+- `admins`: user có full quyền hệ thống
+- `domains`: domain mail đang được hệ thống quản lý
+- `permissions`: quyền theo `user + domain + status`
+- `email_registers`: mailbox cụ thể mà user đã đăng ký monitor
+- `emails`: mail đã ingest
+- `groups`: group thuộc sở hữu cố định của một user
+- `group_emails`: danh sách `email_id` nằm trong group
+
+## Quy tắc quyền
+
+- Admin có full quyền trên mọi domain, user, group, email
+- User thường chỉ thấy domain đã được cấp trong `permissions`
+- User thường chỉ đọc được mail thuộc mailbox mà chính user đã đăng ký trong `email_registers`
+- Hai user không thể cùng đăng ký một `emailAddress`
+- Group chỉ thuộc về owner, không chuyển owner
+- Muốn add mail vào group thì mailbox đó phải đã được owner đăng ký trước
+
+## Error format
+
+Response lỗi chuẩn:
+
+```json
+{
+  "error": "Human readable message",
+  "details": {},
+  "requestId": "uuid"
+}
+```
+
+Các mã thường gặp:
+
+- `400`: payload/query/path không hợp lệ
+- `401`: chưa login hoặc token lỗi/hết hạn
+- `403`: không đủ quyền
+- `404`: không tìm thấy bản ghi
+- `409`: conflict logic nghiệp vụ
 
 ## Auth
-
-### 1. User session cho web
-
-- Header: `Authorization: Bearer <sessionToken>`
-- Token nhận từ `POST /v1/auth/login`
-- Không dùng cookie, không có CSRF flow
-- `POST /v1/auth/refresh` gia hạn session và trả token mới
-
-### 2. API key cho bot/script
-
-- Header khuyến nghị: `X-Api-Key: <apiKey>`
-- Header thay thế: `Authorization: ApiKey <apiKey>`
-- API key được rotate qua:
-  - `POST /v1/auth/me/api-key/rotate`
-  - `POST /v1/users/:userId/api-key/rotate`
-
-### 3. Inbound từ worker
-
-- Header: `Authorization: Bearer <INBOUND_AUTH_TOKEN>`
-- Chỉ dùng cho `POST /v1/inbound/email`
-
-## Permission Model
-
-### Role
-
-- `viewer`: đọc mail
-- `operator`: đọc + xóa mail
-- `admin`: quản trị domain/mailbox scope
-
-### Scope
-
-- Domain-level permission: `localPart = null`
-- Mailbox-level permission: `localPart = "<mailbox>"`
-- Global admin: user có row trong bảng `admins`
-
-### Email registration gate
-
-- Bảng `email_registers` lưu mailbox mà user muốn monitor
-- User thường chỉ đọc/xóa/fetch mail nếu:
-  - mailbox đó vẫn nằm trong permission scope hiện hành
-  - và mailbox đó đã được user register
-- Mỗi mailbox chỉ được đăng ký bởi một user trên toàn hệ thống
-- Group chỉ được chứa email ID thuộc mailbox đã register cho owner của group
-
-### Lưu ý quan trọng cho frontend
-
-- User mailbox-only sẽ có domain nằm trong `accessibleDomains` của `GET /v1/auth/me`
-- Nhưng `GET /v1/domains` chỉ trả domain cho:
-  - global admin
-  - user có domain-level permission
-- Vì vậy frontend nên dùng `GET /v1/auth/me` làm nguồn chân lý cho current account + domain scope
-
-## Common Error Shape
-
-```json
-{
-  "error": "Validation failed",
-  "details": [],
-  "requestId": "..."
-}
-```
-
-Status thường gặp:
-
-- `400`: input/query invalid
-- `401`: chưa auth hoặc token/api key sai
-- `403`: không đủ quyền
-- `404`: không tìm thấy resource hoặc resource không thuộc scope user
-- `409`: conflict hoặc state bị prune
-- `413`: body quá lớn
-- `422`: inbound vào domain chưa đăng ký
-- `500`: lỗi server
-
-## Data Shapes
-
-### User
-
-```json
-{
-  "id": 1,
-  "username": "alice",
-  "displayName": "Alice",
-  "telegramId": "123456789",
-  "status": "active",
-  "hasPassword": true,
-  "hasApiKey": true,
-  "apiKeyLastFour": "a1b2",
-  "isAdmin": false,
-  "lastSeenAt": "2026-03-21T10:00:00.000Z",
-  "createdAt": "2026-03-21T09:00:00.000Z",
-  "updatedAt": "2026-03-21T10:00:00.000Z"
-}
-```
-
-### Session
-
-```json
-{
-  "id": 1,
-  "userId": 1,
-  "expiresAt": "2026-03-28T10:00:00.000Z",
-  "createdAt": "2026-03-21T10:00:00.000Z",
-  "lastSeenAt": "2026-03-21T10:00:00.000Z",
-  "revokedAt": null,
-  "ipAddress": "::1",
-  "userAgent": "Mozilla/5.0"
-}
-```
-
-### Domain
-
-```json
-{
-  "id": 1,
-  "domain": "example.com",
-  "description": "Main domain",
-  "status": "active",
-  "inboundEnabled": true,
-  "isDefault": false,
-  "counts": {
-    "domainPermissions": 1,
-    "mailboxPermissions": 4,
-    "emails": 250
-  },
-  "createdAt": "2026-03-21T09:00:00.000Z",
-  "updatedAt": "2026-03-21T10:00:00.000Z"
-}
-```
-
-### Permission
-
-```json
-{
-  "id": 10,
-  "domain": "example.com",
-  "localPart": "alice",
-  "emailAddress": "alice@example.com",
-  "role": "operator",
-  "status": "active",
-  "user": {
-    "id": 1,
-    "username": "alice",
-    "displayName": "Alice",
-    "telegramId": "123456789",
-    "status": "active"
-  },
-  "grantedBy": {
-    "userId": 99,
-    "username": "admin",
-    "displayName": "Admin"
-  },
-  "createdAt": "2026-03-21T09:00:00.000Z",
-  "updatedAt": "2026-03-21T10:00:00.000Z"
-}
-```
-
-### Email
-
-```json
-{
-  "id": 100,
-  "to": "alice@example.com",
-  "localPart": "alice",
-  "domain": "example.com",
-  "envelopeFrom": "sender@example.net",
-  "from": {
-    "name": "Sender",
-    "address": "sender@example.net"
-  },
-  "subject": "Hello",
-  "text": "Hello Alice",
-  "html": "<p>Hello Alice</p>",
-  "workerName": "edge-sg-1",
-  "sourceDomain": "example.com",
-  "messageId": "abc@example.net",
-  "receivedAt": "2026-03-21T10:00:00.000Z",
-  "createdAt": "2026-03-21T10:00:00.000Z",
-  "hasRawMime": true,
-  "rawMimeSize": 2048,
-  "groupCount": 2,
-  "rawMime": "base64..."
-}
-```
-
-- `rawMime` chỉ có khi request bật `includeRawMime`
-
-### Group
-
-```json
-{
-  "id": 7,
-  "ownerUserId": 1,
-  "owner": {
-    "id": 1,
-    "username": "alice",
-    "displayName": "Alice"
-  },
-  "name": "Important",
-  "color": "#2563EB",
-  "description": "Pinned emails",
-  "emailCount": 3,
-  "createdAt": "2026-03-21T09:00:00.000Z",
-  "updatedAt": "2026-03-21T10:00:00.000Z"
-}
-```
-
-### Email Register
-
-```json
-{
-  "id": 12,
-  "ownerUserId": 1,
-  "owner": {
-    "id": 1,
-    "username": "alice",
-    "displayName": "Alice"
-  },
-  "emailAddress": "alice@example.com",
-  "localPart": "alice",
-  "domain": "example.com",
-  "emailCount": 5,
-  "latestReceivedAt": "2026-03-21T10:00:00.000Z",
-  "createdAt": "2026-03-21T09:00:00.000Z",
-  "updatedAt": "2026-03-21T10:00:00.000Z"
-}
-```
-
-## Auth Routes
 
 ### `POST /v1/auth/login`
 
@@ -248,76 +58,34 @@ Body:
 
 ```json
 {
-  "username": "alice",
-  "password": "alice-pass-123"
+  "username": "admin",
+  "password": "admin-pass-123"
 }
 ```
 
-Response `200`:
+Response chính:
 
-```json
-{
-  "success": true,
-  "tokenType": "Bearer",
-  "sessionToken": "<jwt>",
-  "expiresAt": "2026-03-28T10:00:00.000Z",
-  "session": {},
-  "account": {
-    "...user": true,
-    "permissions": []
-  },
-  "requestId": "..."
-}
-```
+- `sessionToken`
+- `expiresAt`
+- `session`
+- `account`
 
 ### `POST /v1/auth/logout`
 
-- Auth: session token hoặc api key
-- Nếu auth bằng api key thì vẫn trả `success: true`
-
-Response `200`:
-
-```json
-{
-  "success": true,
-  "requestId": "..."
-}
-```
+Logout session hiện tại.
 
 ### `POST /v1/auth/refresh`
 
-- Auth: phải là session token
-
-Response `200`:
-
-```json
-{
-  "success": true,
-  "tokenType": "Bearer",
-  "sessionToken": "<jwt>",
-  "expiresAt": "2026-03-28T10:00:00.000Z",
-  "requestId": "..."
-}
-```
+Gia hạn session JWT, trả về `sessionToken` mới.
 
 ### `GET /v1/auth/me`
 
-- Auth: session token hoặc api key
+Entry point chính sau login.
 
-Response `200`:
+Response:
 
-```json
-{
-  "account": {
-    "...user": true,
-    "permissions": []
-  },
-  "accessibleDomains": [
-    "example.com"
-  ],
-  "requestId": "..."
-}
-```
+- `account`: profile hiện tại, kèm `permissions`
+- `accessibleDomains`: danh sách domain user đang có thể truy cập
 
 ### `PATCH /v1/auth/me`
 
@@ -325,12 +93,10 @@ Body:
 
 ```json
 {
-  "displayName": "Alice Updated",
+  "displayName": "New Name",
   "telegramId": "123456789"
 }
 ```
-
-- `telegramId: null` để xóa
 
 ### `POST /v1/auth/me/password`
 
@@ -345,47 +111,27 @@ Body:
 
 ### `POST /v1/auth/me/api-key/rotate`
 
-Body optional:
+Không bắt buộc cho frontend web, nhưng đang dùng ở tab profile để tạo API key mới.
 
-```json
-{
-  "apiKey": "custom-api-key-min-16"
-}
-```
+## Users
 
-Response `200`:
-
-```json
-{
-  "success": true,
-  "user": {},
-  "apiKey": "<plain-text-api-key>",
-  "requestId": "..."
-}
-```
-
-## User Admin Routes
-
-Tất cả route dưới đây cần global admin.
+Admin only.
 
 ### `GET /v1/users`
 
-Response:
+Query hỗ trợ:
 
-```json
-{
-  "count": 2,
-  "users": [
-    {
-      "...user": true,
-      "permissionCount": 3
-    }
-  ],
-  "requestId": "..."
-}
-```
+- `q`: tìm theo `username`, `displayName`, `telegramId`
+- `telegramId`: lọc exact theo Telegram ID
+- `limit` mặc định `50`, max `200`
+- `offset` mặc định `0`
 
-### `GET /v1/users/by-telegram/:telegramId`
+Trả về:
+
+- `total`
+- `count`
+- `users[]`
+- mỗi user có `permissionCount`
 
 ### `POST /v1/users`
 
@@ -397,51 +143,50 @@ Body:
   "password": "alice-pass-123",
   "displayName": "Alice",
   "telegramId": "123456789",
-  "status": "active",
-  "generateApiKey": true,
-  "apiKey": "optional-custom-api-key"
+  "status": "active"
 }
 ```
 
-Notes:
+Có thể thêm:
 
-- `username` sẽ được normalize lowercase
-- password tối thiểu 8 ký tự
-- `generateApiKey` mặc định là `true`
+- `generateApiKey`
+- `apiKey`
 
 ### `GET /v1/users/:userId`
 
-Response trả thêm `permissions`.
+Trả về `user` đầy đủ, kèm `permissions[]`.
 
 ### `PATCH /v1/users/:userId`
 
-Body:
+Cho phép đổi:
 
-```json
-{
-  "username": "alice2",
-  "password": "new-pass-123",
-  "displayName": "Alice 2",
-  "telegramId": null,
-  "status": "disabled"
-}
-```
+- `username`
+- `password`
+- `displayName`
+- `telegramId`
+- `status`
 
 ### `POST /v1/users/:userId/api-key/rotate`
 
-Body optional:
+Admin rotate API key cho user bất kỳ.
 
-```json
-{
-  "apiKey": "optional-custom-api-key"
-}
-```
+## Admins
 
-## Admin Routes
-
-Tất cả route dưới đây cần global admin.
+Admin only.
 
 ### `GET /v1/admins`
+
+Query hỗ trợ:
+
+- `q`: tìm theo `username`, `displayName`, `telegramId`
+- `limit` mặc định `50`, max `200`
+- `offset` mặc định `0`
+
+Trả về:
+
+- `total`
+- `count`
+- `admins[]`
 
 ### `POST /v1/admins`
 
@@ -449,7 +194,7 @@ Body:
 
 ```json
 {
-  "userId": 1
+  "userId": 12
 }
 ```
 
@@ -461,101 +206,123 @@ hoặc
 }
 ```
 
-Response `201`:
+### `DELETE /v1/admins/:userId`
+
+Gỡ quyền admin. Không thể gỡ admin cuối cùng.
+
+## Permissions
+
+Admin only. Permission hiện chỉ còn theo domain.
+
+Schema:
 
 ```json
 {
-  "success": true,
-  "admin": {},
-  "requestId": "..."
+  "id": 1,
+  "domain": "example.com",
+  "status": "active",
+  "user": {
+    "id": 12,
+    "username": "alice",
+    "displayName": "Alice",
+    "telegramId": "123456789",
+    "status": "active"
+  },
+  "grantedBy": {
+    "userId": 1,
+    "username": "admin",
+    "displayName": "Admin"
+  },
+  "createdAt": "2026-03-21T10:00:00.000Z",
+  "updatedAt": "2026-03-21T10:00:00.000Z"
 }
 ```
-
-### `DELETE /v1/admins/:userId`
-
-- Không cho xóa admin cuối cùng, sẽ trả `409`
-
-## Permission Routes
 
 ### `GET /v1/permissions`
 
-- Global admin only
-- Query optional:
-  - `userId`
-  - `username`
-  - `domain`
-  - `localPart`
-  - `role`
-  - `status`
+Query hỗ trợ:
+
+- `userId`
+- `username`
+- `domain`
+- `status`
+- `limit` mặc định `50`, max `200`
+- `offset` mặc định `0`
+
+Response:
+
+- `total`
+- `count`
+- `permissions[]`
 
 ### `POST /v1/permissions`
 
-- Global admin only
-- Upsert theo scope `(userId/domain/localPart)`
-
 Body:
 
 ```json
 {
-  "userId": 1,
+  "userId": 12,
   "domain": "example.com",
-  "localPart": "alice",
-  "role": "operator",
   "status": "active"
 }
 ```
 
-hoặc tạo user ngầm nếu chưa có:
-
-```json
-{
-  "username": "alice",
-  "displayName": "Alice",
-  "telegramId": "123456789",
-  "domain": "example.com",
-  "localPart": null,
-  "role": "viewer"
-}
-```
-
-Notes:
-
-- `localPart: null` nghĩa là domain-level permission
-- Route này luôn trả `201` cả khi create lẫn update scope cũ
+Hoặc target theo `username`. Nếu dùng `username` chưa tồn tại thì backend có thể auto-create user shell.
 
 ### `GET /v1/permissions/:permissionId`
 
+Lấy chi tiết một permission.
+
 ### `PATCH /v1/permissions/:permissionId`
 
-Body:
+Chỉ update:
 
 ```json
 {
-  "role": "admin",
-  "status": "active"
+  "status": "disabled"
 }
 ```
 
 ### `DELETE /v1/permissions/:permissionId`
 
-## Domain Routes
+Xóa permission.
+
+## Domains
 
 ### `GET /v1/domains`
 
-- Global admin: thấy tất cả domain
-- User thường: chỉ thấy domain mà mình có domain-level permission
+- Admin: thấy tất cả domain
+- User thường: chỉ thấy domain đã có permission
+- Query hỗ trợ `limit` mặc định `50`, max `200`
+- Query hỗ trợ `offset` mặc định `0`
+
+Mỗi domain có:
+
+```json
+{
+  "counts": {
+    "permissionCount": 3,
+    "emails": 120
+  }
+}
+```
+
+Response:
+
+- `total`
+- `count`
+- `domains[]`
 
 ### `POST /v1/domains`
 
-- Global admin only
-- Upsert domain theo `domain`
+Admin only.
 
 Body:
 
 ```json
 {
   "domain": "example.com",
-  "description": "Main domain",
+  "description": "Primary domain",
   "status": "active",
   "inboundEnabled": true,
   "isDefault": false
@@ -564,46 +331,28 @@ Body:
 
 ### `GET /v1/domains/:domain`
 
-- Cần domain-level `viewer` trở lên
+User phải có quyền trên domain đó hoặc là admin.
 
 ### `PATCH /v1/domains/:domain`
 
-- Cần domain-level `admin` hoặc global admin
+Admin only.
 
-### `GET /v1/domains/:domain/permissions`
+## Email Registers
 
-- Cần domain-level `admin` hoặc global admin
-
-### `POST /v1/domains/:domain/permissions`
-
-- Cần domain-level `admin` hoặc global admin
-- Upsert permission trong phạm vi domain đó
-
-Body:
-
-```json
-{
-  "userId": 1,
-  "localPart": "alice",
-  "role": "operator",
-  "status": "active"
-}
-```
-
-### `GET /v1/domains/:domain/permissions/:permissionId`
-
-### `PATCH /v1/domains/:domain/permissions/:permissionId`
-
-### `DELETE /v1/domains/:domain/permissions/:permissionId`
-
-- Cả 3 route trên đều check `permissionId` có thuộc đúng domain không, sai domain trả `404`
-
-## Email Register Routes
+Mailbox registrations để monitor realtime.
 
 ### `GET /v1/email-registers`
 
-- User thường: chỉ thấy mailbox của chính mình
-- Global admin: có thể truyền `ownerUserId` để xem mailbox của user khác
+- User thường: lấy mailbox của chính mình
+- Admin: có thể truyền query `ownerUserId`
+- Query hỗ trợ `limit` mặc định `50`, max `200`
+- Query hỗ trợ `offset` mặc định `0`
+
+Response:
+
+- `total`
+- `count`
+- `registrations[]`
 
 ### `POST /v1/email-registers`
 
@@ -615,74 +364,49 @@ Body:
 }
 ```
 
+Admin có thể thêm:
+
+```json
+{
+  "emailAddress": "alice@example.com",
+  "ownerUserId": 12
+}
+```
+
 Rules:
 
-- Mailbox phải còn nằm trong scope permission hiện hành
-- Nếu cùng user đăng ký lại mailbox cũ, route hoạt động như idempotent update
-- Nếu mailbox đã bị user khác claim, route trả `409`
+- phải có permission trên domain của mailbox
+- nếu mailbox đã được user khác đăng ký thì trả `409`
+- cùng owner đăng ký lại thì idempotent
 
 ### `DELETE /v1/email-registers/:registrationId`
 
-- Owner hoặc global admin có thể xóa
-- Khi xóa registration, backend sẽ tự gỡ mọi `group_emails` của owner đang trỏ vào mailbox đó
+Xóa đăng ký mailbox. Nếu group của owner đang chứa mail từ mailbox đó thì backend tự gỡ các mail liên quan khỏi group.
 
-## Email Routes
+## Emails
 
 ### `GET /v1/emails`
 
 Query:
 
+- `limit` mặc định `50`, max `200`
+- `cursor`: opaque cursor để lấy trang tiếp theo
 - `domain`
 - `address`
-- `limit` default `50`, max `200`
-- `offset` default `0`
+- `scope=registered|system`
 
 Rules:
 
-- Global admin có thể xem toàn cục nếu không truyền filter
-- User thường chỉ thấy email thuộc mailbox đã register cho chính mình
-- User thường có thể truyền thêm `domain` hoặc `address` để thu hẹp tập mailbox đã register
-- Nếu truyền cả hai thì domain trong `address` phải khớp query `domain`
+- User thường chỉ dùng `scope=registered` và chỉ thấy mail của mailbox đã đăng ký bởi chính họ
+- Admin có thể dùng `scope=system` để đọc toàn bộ mail hệ thống
+- Nếu không truyền `scope` thì backend giữ behavior mặc định theo auth hiện tại
 
 Response:
 
-```json
-{
-  "total": 100,
-  "count": 50,
-  "emails": [],
-  "requestId": "..."
-}
-```
-
-### `POST /v1/emails/batch`
-
-Body:
-
-```json
-{
-  "emailIds": [1, 2, 3],
-  "includeRawMime": false
-}
-```
-
-Response:
-
-```json
-{
-  "count": 2,
-  "emails": [],
-  "missingIds": [3],
-  "deniedIds": [2],
-  "requestId": "..."
-}
-```
-
-Notes:
-
-- batch là partial success, không fail toàn bộ nếu có id denied/missing
-- Với user thường, denied thường đến từ mailbox chưa register hoặc permission đã mất
-- max `200` email IDs
+- `count`
+- `emails[]`
+- `hasMore`
+- `nextCursor`
 
 ### `GET /v1/emails/:id`
 
@@ -692,48 +416,52 @@ Query:
 
 ### `DELETE /v1/emails/:id`
 
-- Cần mailbox permission `operator` trở lên và mailbox phải đang được register cho user hiện tại
+User thường chỉ xóa được mail thuộc mailbox đã đăng ký và có permission trên domain.
 
-## Inbox Routes
-
-Path param `emailAddress` phải URL-encode.
-
-Ví dụ:
-
-- `/v1/inboxes/alice%40example.com`
+## Inboxes
 
 ### `GET /v1/inboxes/:emailAddress`
 
+Path phải URL-encode, ví dụ `alice%40example.com`.
+
 Query:
 
-- `limit` default `50`, max `200`
+- `limit`, mặc định `50`, max `200`
+- `cursor`: opaque cursor để lấy trang tiếp theo
+- `stime`: Unix timestamp dạng số, chỉ trả mail có `receivedAt` lớn hơn mốc này
 
 Rules:
 
-- User thường chỉ fetch được inbox đã register
-- Global admin có thể fetch mọi inbox
+- mailbox phải thuộc `email_registers` của caller, trừ admin
+- caller phải có permission trên domain của mailbox
+
+Response:
+
+- `count`
+- `emails[]`
+- `hasMore`
+- `nextCursor`
 
 ### `DELETE /v1/inboxes/:emailAddress`
 
-- Xóa toàn bộ mail của inbox
-- Cần mailbox permission `operator` trở lên
-- User thường còn phải là owner của registration tương ứng
+Xóa toàn bộ mail của mailbox.
 
-## Group Routes
+## Groups
 
-Group luôn thuộc chặt với owner user.
-
-Rules:
-
-- User thường chỉ thấy group của chính mình
-- Global admin có thể list group của user khác bằng `ownerUserId`
-- Không có transfer ownership
+Group luôn thuộc về một owner user.
 
 ### `GET /v1/groups`
 
-Query:
+- Luôn chỉ list group của chính user hiện tại
+- Admin cũng không đọc group của user khác qua route này
+- Query hỗ trợ `limit` mặc định `50`, max `200`
+- Query hỗ trợ `offset` mặc định `0`
 
-- `ownerUserId` chỉ có ý nghĩa với global admin
+Response:
+
+- `total`
+- `count`
+- `groups[]`
 
 ### `POST /v1/groups`
 
@@ -742,183 +470,88 @@ Body:
 ```json
 {
   "name": "Important",
-  "color": "#2563EB",
-  "description": "Pinned emails"
+  "color": "#3B82F6",
+  "description": "Pinned mail"
 }
 ```
 
 ### `GET /v1/groups/:groupId`
-
 ### `PATCH /v1/groups/:groupId`
-
 ### `DELETE /v1/groups/:groupId`
+
+Chỉ owner group mới thao tác được.
+
+### `POST /v1/groups/:groupId/emails`
+
+Append thêm mail vào group.
+
+Body hỗ trợ 1 trong 2 kiểu:
+
+```json
+{
+  "emailIds": [1, 2, 3]
+}
+```
+
+hoặc
+
+```json
+{
+  "emailAddresses": ["alice@example.com", "ops@example.com"]
+}
+```
+
+Behavior với `emailAddresses`:
+
+- backend sẽ auto-register mailbox cho owner nếu mailbox đó chưa được owner đăng ký
+- nếu mailbox đã do user khác đăng ký thì trả `409`
+- sau đó backend lấy toàn bộ email hiện có của các mailbox đó để append vào group
 
 ### `GET /v1/groups/:groupId/emails`
 
 Query:
 
-- `limit` default `100`, max `200`
-- `offset` default `0`
+- `limit` mặc định `100`, max `200`
+- `cursor`: opaque cursor theo thứ tự email trong group
 - `includeRawMime=1`
 
-Response `200`:
+Behavior:
 
-```json
-{
-  "group": {},
-  "total": 3,
-  "count": 3,
-  "emails": [
-    {
-      "...email": true,
-      "groupPosition": 1,
-      "groupAddedAt": "2026-03-21T10:00:00.000Z",
-      "groupAddedByUserId": 1
-    }
-  ],
-  "requestId": "..."
-}
-```
+- chỉ owner group mới đọc được
+- backend kiểm lại quyền của owner trên từng email trong group
+- nếu group chứa email đã missing hoặc denied thì backend tự gỡ chúng và trả `409`
 
-Special case:
+Response:
 
-- Nếu group chứa email ID bị denied, bị xóa, hoặc owner không còn register mailbox tương ứng, route này sẽ:
-  - tự gỡ các email ID lỗi khỏi group
-  - trả `409`
-
-Error shape ví dụ:
-
-```json
-{
-  "error": "Group contained inaccessible emails; denied or stale ids were removed",
-  "details": {
-    "missingIds": [],
-    "deniedIds": [10],
-    "prunedIds": [10]
-  },
-  "requestId": "..."
-}
-```
-
-Frontend nên:
-
-1. Hiển thị thông báo
-2. Reload group một lần nữa
-
-### `POST /v1/groups/:groupId/emails`
-
-Body:
-
-```json
-{
-  "emailIds": [10, 11, 12]
-}
-```
-
-- Add theo kiểu append
-- Bỏ qua email ID đã có sẵn
-- Nếu có mail không truy cập được hoặc owner chưa register mailbox tương ứng, route fail `403`
-
-### `PUT /v1/groups/:groupId/emails`
-
-Body:
-
-```json
-{
-  "emailIds": [10, 11, 12]
-}
-```
-
-- Replace toàn bộ danh sách email trong group
-- Cho phép mảng rỗng
+- `group`
+- `count`
+- `emails`
+- `hasMore`
+- `nextCursor`
 
 ### `DELETE /v1/groups/:groupId/emails/:emailId`
 
-- Xóa một email khỏi group và reindex `position`
+Gỡ một email khỏi group.
 
-## Inbound Route
+## Inbound
 
 ### `POST /v1/inbound/email`
 
-- Auth: inbound bearer token
-- Content-Type: `message/rfc822`
-- Body: raw MIME
+Worker-only route.
 
-Headers hỗ trợ:
+- Auth bằng inbound token
+- Body là raw MIME
+- Header chính:
+  - `X-Email-Envelope-To`
+  - `X-Email-Envelope-From`
+  - `X-Email-Worker-Name`
 
-- `X-Email-Envelope-To` bắt buộc thực tế để ingest ổn định
-- `X-Email-Envelope-From`
-- `X-Email-Worker-Name`
-- `X-Email-Received-At`
-- `X-Email-Domain`
-- `X-Email-Message-Id`
+Frontend không dùng route này.
 
-Response `202`:
-
-```json
-{
-  "success": true,
-  "id": 100,
-  "envelopeTo": "alice@example.com",
-  "domain": "example.com",
-  "receivedAt": "2026-03-21T10:00:00.000Z",
-  "requestId": "..."
-}
-```
-
-## Maintenance Route
+## Maintenance
 
 ### `POST /v1/maintenance/prune-raw-mime`
 
-- Global admin only
+Admin only.
 
-Response:
-
-```json
-{
-  "success": true,
-  "skipped": false,
-  "updated": 12,
-  "requestId": "..."
-}
-```
-
-## Health Route
-
-### `GET /health`
-
-Response:
-
-```json
-{
-  "ok": true,
-  "service": "new_server",
-  "nodeEnv": "production",
-  "storage": {
-    "engine": "sqlite",
-    "ready": true
-  },
-  "requestId": "..."
-}
-```
-
-## Frontend Build Notes
-
-- Sau login, lưu `sessionToken`, không có cookie session
-- Gọi `GET /v1/auth/me` ngay sau login để lấy:
-  - current account
-  - permissions
-  - `accessibleDomains`
-- Nếu UI có domain picker cho user thường:
-  - ưu tiên `accessibleDomains`
-  - không phụ thuộc hoàn toàn vào `GET /v1/domains`
-- Inbox route phải encode email address trong path
-- Khi fetch mail theo list ID cho UI selection:
-  - dùng `POST /v1/emails/batch`
-  - xử lý `missingIds` và `deniedIds` riêng
-- Trước khi user thường monitor mailbox:
-  - tạo registration ở `POST /v1/email-registers`
-  - sau đó mới dùng list/inbox/group flow
-- Khi mở group:
-  - nếu `409`, reload lại group/email list ngay
-- API key chỉ hiện plain-text đúng lúc rotate/create, frontend không thể lấy lại bản rõ sau đó
+Dùng ở tab overview để cleanup raw MIME đã quá hạn retention.

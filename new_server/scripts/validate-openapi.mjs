@@ -18,7 +18,6 @@ for (const requiredPath of [
     '/v1/auth/login',
     '/v1/auth/me',
     '/v1/domains',
-    '/v1/emails/batch',
     '/v1/groups/{groupId}/emails',
     '/v1/inbound/email'
 ]) {

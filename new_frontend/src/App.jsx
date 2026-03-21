@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, startTransition, useEffect, useMemo, useState } from 'react'
 import {
   Crown,
   FolderKanban,
@@ -13,32 +13,35 @@ import AppShell from './components/AppShell.jsx'
 import AuthScreen from './components/AuthScreen.jsx'
 import { getMe, login, logout, refreshSession } from './lib/api.js'
 import { formatApiError } from './lib/format.js'
-import AdminsView from './views/AdminsView.jsx'
-import DomainsView from './views/DomainsView.jsx'
-import EmailsView from './views/EmailsView.jsx'
-import GroupsView from './views/GroupsView.jsx'
-import OverviewView from './views/OverviewView.jsx'
-import PermissionsView from './views/PermissionsView.jsx'
-import UsersView from './views/UsersView.jsx'
+const AdminsView = lazy(() => import('./views/AdminsView.jsx'))
+const AdminEmailsView = lazy(() => import('./views/AdminEmailsView.jsx'))
+const DomainsView = lazy(() => import('./views/DomainsView.jsx'))
+const EmailsView = lazy(() => import('./views/EmailsView.jsx'))
+const GroupsView = lazy(() => import('./views/GroupsView.jsx'))
+const OverviewView = lazy(() => import('./views/OverviewView.jsx'))
+const PermissionsView = lazy(() => import('./views/PermissionsView.jsx'))
+const UsersView = lazy(() => import('./views/UsersView.jsx'))
 
 const STORAGE_KEY = 'new_frontend.sessionToken'
 
 const BASE_NAV_ITEMS = [
-  { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-  { id: 'emails', label: 'Emails', icon: Mail },
-  { id: 'groups', label: 'Groups', icon: FolderKanban },
-  { id: 'domains', label: 'Domains', icon: Globe2 },
+  { id: 'overview', label: 'Tổng quan', icon: LayoutDashboard },
+  { id: 'emails', label: 'Mail của tôi', icon: Mail },
+  { id: 'groups', label: 'Nhóm mail', icon: FolderKanban },
+  { id: 'domains', label: 'Domain', icon: Globe2 },
 ]
 
 const ADMIN_NAV_ITEMS = [
-  { id: 'users', label: 'Users', icon: Users2 },
-  { id: 'permissions', label: 'Permissions', icon: ShieldCheck },
-  { id: 'admins', label: 'Admins', icon: Crown },
+  { id: 'admin-mails', label: 'Mail hệ thống', icon: Mail },
+  { id: 'users', label: 'Người dùng', icon: Users2 },
+  { id: 'permissions', label: 'Quyền', icon: ShieldCheck },
+  { id: 'admins', label: 'Admin', icon: Crown },
 ]
 
 const VIEW_LABELS = {
   overview: OverviewView,
   emails: EmailsView,
+  'admin-mails': AdminEmailsView,
   groups: GroupsView,
   domains: DomainsView,
   users: UsersView,
@@ -143,6 +146,16 @@ export default function App() {
     return account.isAdmin ? [...BASE_NAV_ITEMS, ...ADMIN_NAV_ITEMS] : BASE_NAV_ITEMS
   }, [account])
 
+  useEffect(() => {
+    if (account?.isAdmin) {
+      return
+    }
+
+    if (activeView === 'admin-mails' || activeView === 'users' || activeView === 'permissions' || activeView === 'admins') {
+      setActiveView('overview')
+    }
+  }, [account, activeView])
+
   async function handleLogin(credentials) {
     try {
       const response = await login(credentials)
@@ -197,7 +210,7 @@ export default function App() {
     return (
       <main className="app-shell flex min-h-screen items-center justify-center px-4">
         <div className="panel-strong rounded-[2rem] px-8 py-10 text-center">
-          <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[var(--accent)]">Restoring session</p>
+          <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[var(--accent)]">Khôi phục phiên</p>
           <h1 className="mt-3 font-display text-4xl tracking-[-0.04em] text-[var(--ink)]">Mail Console</h1>
           <p className="mt-3 text-sm leading-6 text-[var(--muted)]">Đang đồng bộ session JWT và nạp hồ sơ người dùng.</p>
         </div>
@@ -219,14 +232,26 @@ export default function App() {
       onNavigate={(viewId) => startTransition(() => setActiveView(viewId))}
       onLogout={handleLogout}
     >
-      <ActiveView
-        token={token}
-        account={account}
-        accessibleDomains={accessibleDomains}
-        sessionExpiresAt={sessionExpiresAt}
-        onRefreshAccount={handleRefreshAccount}
-        onRefreshSession={handleRefreshSession}
-      />
+      <Suspense
+        fallback={(
+          <section className="panel panel-tone-slate rounded-[1.75rem] px-6 py-10 sm:px-8">
+            <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[var(--accent)]">Đang nạp view</p>
+            <h2 className="mt-3 font-display text-3xl tracking-[-0.04em] text-[var(--ink)]">Đang tải module</h2>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-[var(--muted)]">
+              View được tách bundle riêng để giảm lag lúc khởi động và chỉ nạp khi cần.
+            </p>
+          </section>
+        )}
+      >
+        <ActiveView
+          token={token}
+          account={account}
+          accessibleDomains={accessibleDomains}
+          sessionExpiresAt={sessionExpiresAt}
+          onRefreshAccount={handleRefreshAccount}
+          onRefreshSession={handleRefreshSession}
+        />
+      </Suspense>
     </AppShell>
   )
 }

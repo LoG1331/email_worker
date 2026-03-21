@@ -1,7 +1,9 @@
 import { getDb, withTransaction } from '../db/index.mjs';
-import { hasGlobalPermission } from './account-service.mjs';
+import { assertRegisteredMailboxPermission } from './email-service.mjs';
 import { getAuthorizedEmailsByIds } from './email-service.mjs';
+import { parseEmailAddress } from '../utils/email.mjs';
 import { HttpError } from '../utils/http.mjs';
+import { decodeCursor, encodeCursor } from '../utils/cursor.mjs';
 
 function cleanText(value) {
     return String(value ?? '').trim();
@@ -50,6 +52,52 @@ function normalizeEmailIds(emailIds, { allowEmpty = false, max = 200 } = {}) {
     return ids;
 }
 
+function normalizeEmailAddresses(emailAddresses, { allowEmpty = false, max = 200 } = {}) {
+    if (!Array.isArray(emailAddresses)) {
+        throw new HttpError(400, 'emailAddresses must be an array');
+    }
+
+    const addresses = [...new Set(
+        emailAddresses
+            .map((value) => {
+                const parsed = parseEmailAddress(value);
+                if (!parsed) {
+                    throw new HttpError(400, `Invalid email address: ${value}`);
+                }
+
+                return parsed.email;
+            })
+    )];
+
+    if (!allowEmpty && !addresses.length) {
+        throw new HttpError(400, 'At least one email address is required');
+    }
+
+    if (addresses.length > max) {
+        throw new HttpError(400, `Maximum ${max} email addresses are allowed per request`);
+    }
+
+    return addresses;
+}
+
+function parseGroupEmailCursor(cursor) {
+    if (!cursor) {
+        return null;
+    }
+
+    const payload = decodeCursor(cursor, 'Invalid group email cursor');
+    const position = Number.parseInt(String(payload?.position ?? ''), 10);
+    const linkId = Number.parseInt(String(payload?.linkId ?? ''), 10);
+    if (!Number.isInteger(position) || position < 0 || !Number.isInteger(linkId) || linkId <= 0) {
+        throw new HttpError(400, 'Invalid group email cursor');
+    }
+
+    return {
+        position,
+        linkId
+    };
+}
+
 function mapGroupRow(row) {
     return {
         id: row.id,
@@ -70,13 +118,7 @@ function mapGroupRow(row) {
 
 async function getGroupRecordForActor(db, auth, groupId) {
     const numericGroupId = parseNumericId(groupId, 'group id');
-    const values = [numericGroupId];
-    let whereClause = `g.id = ?`;
-
-    if (!hasGlobalPermission(auth)) {
-        whereClause += ` AND g.owner_user_id = ?`;
-        values.push(auth?.userId || 0);
-    }
+    const ownerUserId = parseNumericId(auth?.userId, 'user id');
 
     const row = await db.get(
         `
@@ -88,11 +130,12 @@ async function getGroupRecordForActor(db, auth, groupId) {
             FROM groups g
             JOIN users u ON u.id = g.owner_user_id
             LEFT JOIN group_emails ge ON ge.group_id = g.id
-            WHERE ${whereClause}
+            WHERE g.id = ?
+              AND g.owner_user_id = ?
             GROUP BY g.id, u.username, u.display_name
             LIMIT 1
         `,
-        values
+        [numericGroupId, ownerUserId]
     );
 
     if (!row) {
@@ -100,14 +143,6 @@ async function getGroupRecordForActor(db, auth, groupId) {
     }
 
     return row;
-}
-
-function getListOwnerUserId(auth, filters = {}) {
-    if (hasGlobalPermission(auth) && filters.ownerUserId) {
-        return parseNumericId(filters.ownerUserId, 'owner user id');
-    }
-
-    return parseNumericId(auth?.userId, 'user id');
 }
 
 async function getMaxGroupPosition(db, groupId) {
@@ -175,10 +210,114 @@ async function assertEmailIdsAccessible(config, auth, ownerUserId, emailIds) {
     }
 }
 
-export async function listGroups(config, auth, filters = {}) {
-    const ownerUserId = getListOwnerUserId(auth, filters);
-    const db = await getDb(config);
+async function ensureMailboxRegistrationsForOwnerTx(config, db, auth, ownerUserId, emailAddresses) {
+    const normalizedAddresses = normalizeEmailAddresses(emailAddresses);
+    const timestamp = nowIso();
+
+    for (const emailAddress of normalizedAddresses) {
+        await assertRegisteredMailboxPermission(config, auth, emailAddress, 'view', {
+            userId: ownerUserId,
+            requireRegistration: false
+        });
+
+        const existing = await db.get(
+            `
+                SELECT id, owner_user_id
+                FROM email_registers
+                WHERE recipient_address = ?
+                LIMIT 1
+            `,
+            [emailAddress]
+        );
+
+        if (existing) {
+            if (existing.owner_user_id !== ownerUserId) {
+                throw new HttpError(409, 'Email address is already registered by another user', {
+                    emailAddress
+                });
+            }
+
+            await db.run(
+                `
+                    UPDATE email_registers
+                    SET updated_at = ?
+                    WHERE id = ?
+                `,
+                [timestamp, existing.id]
+            );
+            continue;
+        }
+
+        const parsedAddress = parseEmailAddress(emailAddress);
+        const domain = await db.get(
+            `
+                SELECT id
+                FROM domains
+                WHERE name = ?
+                LIMIT 1
+            `,
+            [parsedAddress.domain]
+        );
+
+        if (!domain) {
+            throw new HttpError(404, 'Domain not found for email registration', {
+                emailAddress
+            });
+        }
+
+        await db.run(
+            `
+                INSERT INTO email_registers (
+                    owner_user_id,
+                    domain_id,
+                    recipient_address,
+                    local_part,
+                    recipient_domain,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            `,
+            [
+                ownerUserId,
+                domain.id,
+                parsedAddress.email,
+                parsedAddress.localPart,
+                parsedAddress.domain,
+                timestamp,
+                timestamp
+            ]
+        );
+    }
+
+    return normalizedAddresses;
+}
+
+async function getEmailIdsByAddressesTx(db, emailAddresses) {
+    if (!emailAddresses.length) {
+        return [];
+    }
+
     const rows = await db.all(
+        `
+            SELECT id
+            FROM emails
+            WHERE recipient_address IN (${emailAddresses.map(() => '?').join(', ')})
+            ORDER BY received_at DESC, id DESC
+        `,
+        emailAddresses
+    );
+
+    return [...new Set(rows.map((row) => row.id))];
+}
+
+export async function listGroups(config, auth, pagination = {}) {
+    const ownerUserId = parseNumericId(auth?.userId, 'user id');
+    const db = await getDb(config);
+    const limit = pagination.limit || 50;
+    const offset = pagination.offset || 0;
+    const [rows, totalRow] = await Promise.all([
+        db.all(
         `
             SELECT
                 g.*,
@@ -191,11 +330,24 @@ export async function listGroups(config, auth, filters = {}) {
             WHERE g.owner_user_id = ?
             GROUP BY g.id, u.username, u.display_name
             ORDER BY g.updated_at DESC, g.id DESC
+            LIMIT ? OFFSET ?
         `,
-        [ownerUserId]
-    );
+            [ownerUserId, limit, offset]
+        ),
+        db.get(
+            `
+                SELECT COUNT(*) AS total
+                FROM groups g
+                WHERE g.owner_user_id = ?
+            `,
+            [ownerUserId]
+        )
+    ]);
 
-    return rows.map(mapGroupRow);
+    return {
+        total: totalRow?.total || 0,
+        groups: rows.map(mapGroupRow)
+    };
 }
 
 export async function getGroup(config, auth, groupId) {
@@ -289,37 +441,34 @@ export async function deleteGroup(config, auth, groupId) {
 
 export async function listGroupEmails(config, auth, groupId, pagination = {}) {
     const limit = pagination.limit || 100;
-    const offset = pagination.offset || 0;
+    const cursor = parseGroupEmailCursor(pagination.cursor);
     const includeRawMime = pagination.includeRawMime === true;
 
     const db = await getDb(config);
     const group = await getGroupRecordForActor(db, auth, groupId);
-    const [groupEmailRows, totalRow] = await Promise.all([
-        db.all(
+    const cursorClause = cursor
+        ? ` AND (position > ? OR (position = ? AND id > ?))`
+        : '';
+    const cursorValues = cursor ? [cursor.position, cursor.position, cursor.linkId] : [];
+    const groupEmailRows = await db.all(
             `
                 SELECT
+                    id,
                     email_id,
                     position,
                     added_at,
                     added_by_user_id
                 FROM group_emails
                 WHERE group_id = ?
+                ${cursorClause}
                 ORDER BY position ASC, id ASC
-                LIMIT ? OFFSET ?
+                LIMIT ?
             `,
-            [group.id, limit, offset]
-        ),
-        db.get(
-            `
-                SELECT COUNT(*) AS total
-                FROM group_emails
-                WHERE group_id = ?
-            `,
-            [group.id]
-        )
-    ]);
+            [group.id, ...cursorValues, limit + 1]
+        );
 
-    const emailIds = groupEmailRows.map(row => row.email_id);
+    const pageRows = groupEmailRows.slice(0, limit);
+    const emailIds = pageRows.map(row => row.email_id);
     const batchResult = await getAuthorizedEmailsByIds(config, auth, emailIds, {
         allowEmpty: true,
         includeRawMime,
@@ -357,35 +506,53 @@ export async function listGroupEmails(config, auth, groupId, pagination = {}) {
     }
 
     const emailsById = new Map(batchResult.emails.map(email => [email.id, email]));
+    const emails = pageRows
+        .map(row => {
+            const email = emailsById.get(row.email_id);
+            if (!email) {
+                return null;
+            }
+
+            return {
+                ...email,
+                groupPosition: row.position,
+                groupAddedAt: row.added_at,
+                groupAddedByUserId: row.added_by_user_id
+            };
+        })
+        .filter(Boolean);
+
+    const lastRow = pageRows[pageRows.length - 1];
     return {
         group: mapGroupRow(group),
-        total: totalRow?.total || 0,
-        count: batchResult.emails.length,
-        emails: groupEmailRows
-            .map(row => {
-                const email = emailsById.get(row.email_id);
-                if (!email) {
-                    return null;
-                }
-
-                return {
-                    ...email,
-                    groupPosition: row.position,
-                    groupAddedAt: row.added_at,
-                    groupAddedByUserId: row.added_by_user_id
-                };
+        count: emails.length,
+        emails,
+        hasMore: groupEmailRows.length > limit,
+        nextCursor: groupEmailRows.length > limit && lastRow
+            ? encodeCursor({
+                position: lastRow.position,
+                linkId: lastRow.id
             })
-            .filter(Boolean)
+            : null
     };
 }
 
-export async function addEmailsToGroup(config, auth, groupId, emailIds) {
-    const normalizedEmailIds = normalizeEmailIds(emailIds);
+export async function addEmailsToGroup(config, auth, groupId, payload = {}) {
+    const normalizedEmailIds = payload.emailAddresses?.length
+        ? null
+        : normalizeEmailIds(payload.emailIds);
 
     await withTransaction(config, async (db) => {
         const group = await getGroupRecordForActor(db, auth, groupId);
-        await assertEmailIdsAccessible(config, auth, group.owner_user_id, normalizedEmailIds);
-        await insertGroupEmailIdsTx(db, group.id, normalizedEmailIds, auth?.userId || null);
+        const resolvedEmailIds = payload.emailAddresses?.length
+            ? await getEmailIdsByAddressesTx(
+                db,
+                await ensureMailboxRegistrationsForOwnerTx(config, db, auth, group.owner_user_id, payload.emailAddresses)
+            )
+            : normalizedEmailIds;
+
+        await assertEmailIdsAccessible(config, auth, group.owner_user_id, resolvedEmailIds);
+        await insertGroupEmailIdsTx(db, group.id, resolvedEmailIds, auth?.userId || null);
         await db.run(
             `
                 UPDATE groups
@@ -397,53 +564,7 @@ export async function addEmailsToGroup(config, auth, groupId, emailIds) {
     });
 
     return listGroupEmails(config, auth, groupId, {
-        limit: 100,
-        offset: 0
-    });
-}
-
-export async function replaceGroupEmails(config, auth, groupId, emailIds) {
-    const normalizedEmailIds = normalizeEmailIds(emailIds, {
-        allowEmpty: true
-    });
-
-    await withTransaction(config, async (db) => {
-        const group = await getGroupRecordForActor(db, auth, groupId);
-        await assertEmailIdsAccessible(config, auth, group.owner_user_id, normalizedEmailIds);
-        await db.run(`DELETE FROM group_emails WHERE group_id = ?`, [group.id]);
-
-        let position = 0;
-        const timestamp = nowIso();
-        for (const emailId of normalizedEmailIds) {
-            position += 1;
-            await db.run(
-                `
-                    INSERT INTO group_emails (
-                        group_id,
-                        email_id,
-                        position,
-                        added_at,
-                        added_by_user_id
-                    )
-                    VALUES (?, ?, ?, ?, ?)
-                `,
-                [group.id, emailId, position, timestamp, auth?.userId || null]
-            );
-        }
-
-        await db.run(
-            `
-                UPDATE groups
-                SET updated_at = ?
-                WHERE id = ?
-            `,
-            [timestamp, group.id]
-        );
-    });
-
-    return listGroupEmails(config, auth, groupId, {
-        limit: Math.max(normalizedEmailIds.length, 1),
-        offset: 0
+        limit: 100
     });
 }
 

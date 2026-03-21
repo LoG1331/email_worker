@@ -49,7 +49,7 @@ export default function AppShell({
               <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[var(--accent)]">Mail Console</p>
               <div className="mt-1 flex min-w-0 items-center gap-2">
                 <p className="truncate font-display text-[1.55rem] leading-none tracking-[-0.04em] text-[var(--ink)]">
-                  {navItems.find((item) => item.id === activeView)?.label || 'Workspace'}
+                  {navItems.find((item) => item.id === activeView)?.label || 'Tổng quan'}
                 </p>
                 {account.isAdmin ? <Badge tone="accent"><ShieldCheck className="h-3.5 w-3.5" />Admin</Badge> : null}
               </div>
@@ -77,7 +77,7 @@ export default function AppShell({
               <div>
                 <div>
                   <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[var(--accent)]">Mail Console</p>
-                  <p className="font-display text-[1.7rem] leading-none tracking-[-0.04em] text-[var(--ink)]">new_frontend</p>
+                  <p className="font-display text-[1.7rem] leading-none tracking-[-0.04em] text-[var(--ink)]">Điều phối mail</p>
                 </div>
               </div>
 
@@ -140,7 +140,7 @@ export default function AppShell({
               <div>
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.22em] text-[var(--accent)]">Mail Console</p>
-                  <p className="font-display text-2xl tracking-[-0.03em] text-[var(--ink)]">new_frontend</p>
+                  <p className="font-display text-2xl tracking-[-0.03em] text-[var(--ink)]">Điều phối mail</p>
                 </div>
               </div>
 

@@ -6,22 +6,28 @@ import {
     deleteEmailRegister,
     listEmailRegisters
 } from '../services/email-register-service.mjs';
+import { parsePagination } from '../utils/http.mjs';
 
 const createEmailRegisterSchema = z.object({
-    emailAddress: z.string().min(1)
+    emailAddress: z.string().min(1),
+    ownerUserId: z.union([z.number().int().positive(), z.string().min(1)]).optional()
 });
 
 export function createEmailRegistersRouter(config) {
     const router = express.Router();
 
     router.get('/', asyncHandler(async (req, res) => {
-        const registrations = await listEmailRegisters(config, req.auth, {
+        const result = await listEmailRegisters(config, req.auth, {
             ownerUserId: req.query.ownerUserId ? String(req.query.ownerUserId) : ''
+        }, {
+            limit: parsePagination(req.query.limit, 50, { min: 1, max: 200 }),
+            offset: parsePagination(req.query.offset, 0, { min: 0, max: 100000 })
         });
 
         res.json({
-            count: registrations.length,
-            registrations,
+            total: result.total,
+            count: result.registrations.length,
+            registrations: result.registrations,
             requestId: req.requestId
         });
     }));

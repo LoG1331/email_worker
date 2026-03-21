@@ -2,12 +2,12 @@ import { maybePruneStoredRawMime, getDb, withTransaction } from '../db/index.mjs
 import { hasGlobalPermission } from './account-service.mjs';
 import { normalizeDomain, parseEmailAddress, parseEnvelopeAddress } from '../utils/email.mjs';
 import { HttpError } from '../utils/http.mjs';
+import { decodeCursor, encodeCursor } from '../utils/cursor.mjs';
 
 const EMAIL_BATCH_LIMIT = 200;
 const PERMISSION_LEVELS = {
     view: 1,
-    write: 2,
-    admin: 3
+    write: 1
 };
 
 function cleanText(value) {
@@ -16,6 +16,71 @@ function cleanText(value) {
 
 function nowIso() {
     return new Date().toISOString();
+}
+
+function normalizeStartTime(value) {
+    if (value === undefined || value === null || value === '') {
+        return '';
+    }
+
+    const numericValue = Number.parseInt(String(value), 10);
+    if (!Number.isFinite(numericValue) || numericValue < 0) {
+        throw new HttpError(400, 'Invalid stime filter');
+    }
+
+    const epochMs = numericValue < 1_000_000_000_000
+        ? numericValue * 1000
+        : numericValue;
+    const parsed = new Date(epochMs);
+    if (Number.isNaN(parsed.getTime())) {
+        throw new HttpError(400, 'Invalid stime filter');
+    }
+
+    return parsed.toISOString();
+}
+
+function parseEmailFeedCursor(cursor) {
+    if (!cursor) {
+        return null;
+    }
+
+    const payload = decodeCursor(cursor, 'Invalid email cursor');
+    const receivedAt = String(payload?.receivedAt || '').trim();
+    const id = Number.parseInt(String(payload?.id ?? ''), 10);
+    if (!receivedAt || !Number.isInteger(id) || id <= 0 || Number.isNaN(Date.parse(receivedAt))) {
+        throw new HttpError(400, 'Invalid email cursor');
+    }
+
+    return {
+        receivedAt,
+        id
+    };
+}
+
+function buildEmailCursorSql(cursor, alias = 'e') {
+    if (!cursor) {
+        return {
+            clause: '',
+            values: []
+        };
+    }
+
+    return {
+        clause: ` AND (${alias}.received_at < ? OR (${alias}.received_at = ? AND ${alias}.id < ?))`,
+        values: [cursor.receivedAt, cursor.receivedAt, cursor.id]
+    };
+}
+
+function buildCursorPage(rows, limit, mapRow, buildCursor) {
+    const pageRows = rows.slice(0, limit);
+    return {
+        count: pageRows.length,
+        items: pageRows.map(mapRow),
+        hasMore: rows.length > limit,
+        nextCursor: rows.length > limit && pageRows.length
+            ? buildCursor(pageRows[pageRows.length - 1])
+            : null
+    };
 }
 
 function parsePositiveId(value, label = 'id') {
@@ -139,19 +204,8 @@ function buildInPlaceholders(values) {
     return values.map(() => '?').join(', ');
 }
 
-function buildPermissionLevelCase(alias = 'p') {
-    return `
-        CASE ${alias}.role
-            WHEN 'viewer' THEN 1
-            WHEN 'operator' THEN 2
-            WHEN 'admin' THEN 3
-            ELSE 0
-        END
-    `;
-}
-
 function buildEmailVisibilitySql(userId, permission = 'view', { requireRegistration = true, emailAlias = 'e' } = {}) {
-    const requiredLevel = getRequiredPermissionLevel(permission);
+    getRequiredPermissionLevel(permission);
     const conditions = [
         `
             EXISTS (
@@ -160,12 +214,10 @@ function buildEmailVisibilitySql(userId, permission = 'view', { requireRegistrat
                 WHERE p.user_id = ?
                   AND p.domain_id = ${emailAlias}.domain_id
                   AND p.status = 'active'
-                  AND (${buildPermissionLevelCase('p')}) >= ?
-                  AND (p.local_part IS NULL OR p.local_part = ${emailAlias}.local_part)
             )
         `
     ];
-    const values = [userId, requiredLevel];
+    const values = [userId];
 
     if (requireRegistration) {
         conditions.push(
@@ -196,18 +248,16 @@ async function assertRegisteredMailboxPermission(config, auth, emailAddress, per
     const subjectUserId = options.userId === undefined || options.userId === null
         ? null
         : parsePositiveId(options.userId, 'user id');
-    if (!subjectUserId && hasGlobalPermission(auth)) {
+    if (hasGlobalPermission(auth) && (subjectUserId === null || subjectUserId === Number(auth?.userId || 0))) {
         return parsedAddress;
     }
 
     const requireRegistration = options.requireRegistration !== false;
-    const requiredLevel = getRequiredPermissionLevel(permission);
+    getRequiredPermissionLevel(permission);
     const db = await getDb(config);
     const values = [
         parsedAddress.domain,
-        subjectUserId || auth?.userId || 0,
-        requiredLevel,
-        parsedAddress.localPart
+        subjectUserId || auth?.userId || 0
     ];
     let registrationClause = '';
 
@@ -234,8 +284,6 @@ async function assertRegisteredMailboxPermission(config, auth, emailAddress, per
                   WHERE p.user_id = ?
                     AND p.domain_id = d.id
                     AND p.status = 'active'
-                    AND (${buildPermissionLevelCase('p')}) >= ?
-                    AND (p.local_part IS NULL OR p.local_part = ?)
               )
               ${registrationClause}
             LIMIT 1
@@ -404,8 +452,20 @@ export async function listEmails(config, auth, filters = {}) {
     const conditions = [];
     const values = [];
     const limit = filters.limit || 50;
-    const offset = filters.offset || 0;
-    const bypassVisibility = hasGlobalPermission(auth);
+    const cursor = parseEmailFeedCursor(filters.cursor);
+    const scope = filters.scope || '';
+    const isRegisteredScope = scope === 'registered';
+    const isSystemScope = scope === 'system';
+
+    if (scope && !isRegisteredScope && !isSystemScope) {
+        throw new HttpError(400, 'Invalid scope filter');
+    }
+
+    if (isSystemScope && !hasGlobalPermission(auth)) {
+        throw new HttpError(403, 'System scope is only available to admins');
+    }
+
+    const bypassVisibility = hasGlobalPermission(auth) && !isRegisteredScope;
 
     if (filters.domain) {
         const domain = normalizeDomain(filters.domain);
@@ -435,7 +495,13 @@ export async function listEmails(config, auth, filters = {}) {
         values.push(...visibility.values);
     }
 
-    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const cursorClause = buildEmailCursorSql(cursor, 'e');
+    const allConditions = [...conditions];
+    if (cursorClause.clause) {
+        allConditions.push(cursorClause.clause.replace(/^ AND /, ''));
+    }
+
+    const whereClause = allConditions.length ? `WHERE ${allConditions.join(' AND ')}` : '';
     const rows = await db.all(
         `
             ${baseEmailSelect()}
@@ -443,46 +509,70 @@ export async function listEmails(config, auth, filters = {}) {
             ${groupCountJoinSql()}
             ${whereClause}
             ORDER BY e.received_at DESC, e.id DESC
-            LIMIT ? OFFSET ?
+            LIMIT ?
         `,
-        [...values, limit, offset]
+        [...values, ...cursorClause.values, limit + 1]
     );
 
-    const totalRow = await db.get(
-        `
-            SELECT COUNT(*) AS total
-            FROM emails e
-            ${whereClause}
-        `,
-        values
+    const page = buildCursorPage(
+        rows,
+        limit,
+        row => mapEmailRow(row),
+        row => encodeCursor({ receivedAt: row.received_at, id: row.id })
     );
 
     return {
-        total: totalRow?.total || 0,
-        emails: rows.map(row => mapEmailRow(row))
+        count: page.count,
+        emails: page.items,
+        hasMore: page.hasMore,
+        nextCursor: page.nextCursor
     };
 }
 
-export async function getInboxByAddress(config, emailAddress, limit = 50) {
+export async function getInboxByAddress(config, emailAddress, options = {}) {
     const parsedAddress = parseEmailAddress(emailAddress);
     if (!parsedAddress) {
         throw new HttpError(400, 'Invalid email address');
     }
 
+    const limit = options.limit || 50;
+    const cursor = parseEmailFeedCursor(options.cursor);
+    const startTime = normalizeStartTime(options.stime);
     const db = await getDb(config);
+    const conditions = [`e.recipient_address = ?`];
+    const values = [parsedAddress.email];
+
+    if (startTime) {
+        conditions.push(`e.received_at > ?`);
+        values.push(startTime);
+    }
+
+    const cursorClause = buildEmailCursorSql(cursor, 'e');
     const rows = await db.all(
         `
             ${baseEmailSelect()}
             FROM emails e
             ${groupCountJoinSql()}
-            WHERE e.recipient_address = ?
+            WHERE ${conditions.join(' AND ')}${cursorClause.clause}
             ORDER BY e.received_at DESC, e.id DESC
             LIMIT ?
         `,
-        [parsedAddress.email, limit]
+        [...values, ...cursorClause.values, limit + 1]
     );
 
-    return rows.map(row => mapEmailRow(row));
+    const page = buildCursorPage(
+        rows,
+        limit,
+        row => mapEmailRow(row),
+        row => encodeCursor({ receivedAt: row.received_at, id: row.id })
+    );
+
+    return {
+        count: page.count,
+        emails: page.items,
+        hasMore: page.hasMore,
+        nextCursor: page.nextCursor
+    };
 }
 
 export async function getEmailById(config, id, { includeRawMime = false } = {}) {
