@@ -1,0 +1,4 @@
+FORWARD_TARGET_URL=http://127.0.0.1:3001/v1/inbound/email
+FORWARD_AUTH_TOKEN=replace-me
+WORKER_NAME=new-worker-local
+EMAIL_DOMAIN=example.com

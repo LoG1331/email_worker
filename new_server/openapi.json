@@ -1,0 +1,2060 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "new_server API",
+    "version": "1.0.0",
+    "description": "Machine-readable API contract for the Express backend in new_server."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3001"
+    }
+  ],
+  "tags": [
+    { "name": "Health" },
+    { "name": "Auth" },
+    { "name": "Users" },
+    { "name": "Admins" },
+    { "name": "Permissions" },
+    { "name": "Domains" },
+    { "name": "EmailRegisters" },
+    { "name": "Emails" },
+    { "name": "Inboxes" },
+    { "name": "Groups" },
+    { "name": "Inbound" },
+    { "name": "Maintenance" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "apiKeyHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Api-Key"
+      },
+      "apiKeyAuthScheme": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "Alternative format: `Authorization: ApiKey <apiKey>`"
+      },
+      "inboundBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Bearer token for worker ingress"
+      }
+    },
+    "schemas": {
+      "RequestId": {
+        "type": "string"
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["error", "requestId"],
+        "properties": {
+          "error": { "type": "string" },
+          "details": {},
+          "requestId": { "$ref": "#/components/schemas/RequestId" }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "required": ["ok", "service", "nodeEnv", "storage", "requestId"],
+        "properties": {
+          "ok": { "type": "boolean" },
+          "service": { "type": "string", "enum": ["new_server"] },
+          "nodeEnv": { "type": "string" },
+          "storage": {
+            "type": "object",
+            "required": ["engine", "ready"],
+            "properties": {
+              "engine": { "type": "string", "enum": ["sqlite"] },
+              "ready": { "type": "boolean" }
+            }
+          },
+          "requestId": { "$ref": "#/components/schemas/RequestId" }
+        }
+      },
+      "GrantedBy": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["userId", "username", "displayName"],
+            "properties": {
+              "userId": { "type": "integer" },
+              "username": { "type": "string" },
+              "displayName": { "type": "string", "nullable": true }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["label"],
+            "properties": {
+              "label": { "type": "string" }
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "PermissionUser": {
+        "type": "object",
+        "required": ["id", "username", "displayName", "telegramId", "status"],
+        "properties": {
+          "id": { "type": "integer" },
+          "username": { "type": "string" },
+          "displayName": { "type": "string" },
+          "telegramId": { "type": "string", "nullable": true },
+          "status": { "type": "string", "enum": ["active", "disabled"] }
+        }
+      },
+      "Permission": {
+        "type": "object",
+        "required": ["id", "domain", "localPart", "emailAddress", "role", "status", "user", "grantedBy", "createdAt", "updatedAt"],
+        "properties": {
+          "id": { "type": "integer" },
+          "domain": { "type": "string" },
+          "localPart": { "type": "string", "nullable": true },
+          "emailAddress": { "type": "string", "nullable": true },
+          "role": { "type": "string", "enum": ["viewer", "operator", "admin"] },
+          "status": { "type": "string", "enum": ["active", "disabled"] },
+          "user": { "$ref": "#/components/schemas/PermissionUser" },
+          "grantedBy": { "$ref": "#/components/schemas/GrantedBy" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "User": {
+        "type": "object",
+        "required": ["id", "username", "displayName", "telegramId", "status", "hasPassword", "hasApiKey", "apiKeyLastFour", "isAdmin", "lastSeenAt", "createdAt", "updatedAt"],
+        "properties": {
+          "id": { "type": "integer" },
+          "username": { "type": "string" },
+          "displayName": { "type": "string" },
+          "telegramId": { "type": "string", "nullable": true },
+          "status": { "type": "string", "enum": ["active", "disabled"] },
+          "hasPassword": { "type": "boolean" },
+          "hasApiKey": { "type": "boolean" },
+          "apiKeyLastFour": { "type": "string", "nullable": true },
+          "isAdmin": { "type": "boolean" },
+          "lastSeenAt": { "type": "string", "format": "date-time", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "UserWithPermissions": {
+        "allOf": [
+          { "$ref": "#/components/schemas/User" },
+          {
+            "type": "object",
+            "required": ["permissions"],
+            "properties": {
+              "permissions": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/Permission" }
+              }
+            }
+          }
+        ]
+      },
+      "Session": {
+        "type": "object",
+        "required": ["id", "userId", "expiresAt", "createdAt", "lastSeenAt", "revokedAt", "ipAddress", "userAgent"],
+        "properties": {
+          "id": { "type": "integer" },
+          "userId": { "type": "integer" },
+          "expiresAt": { "type": "string", "format": "date-time" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "lastSeenAt": { "type": "string", "format": "date-time" },
+          "revokedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "ipAddress": { "type": "string", "nullable": true },
+          "userAgent": { "type": "string", "nullable": true }
+        }
+      },
+      "DomainCounts": {
+        "type": "object",
+        "required": ["domainPermissions", "mailboxPermissions", "emails"],
+        "properties": {
+          "domainPermissions": { "type": "integer" },
+          "mailboxPermissions": { "type": "integer" },
+          "emails": { "type": "integer" }
+        }
+      },
+      "Domain": {
+        "type": "object",
+        "required": ["id", "domain", "description", "status", "inboundEnabled", "isDefault", "counts", "createdAt", "updatedAt"],
+        "properties": {
+          "id": { "type": "integer" },
+          "domain": { "type": "string" },
+          "description": { "type": "string" },
+          "status": { "type": "string", "enum": ["active", "disabled"] },
+          "inboundEnabled": { "type": "boolean" },
+          "isDefault": { "type": "boolean" },
+          "counts": { "$ref": "#/components/schemas/DomainCounts" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "EmailSender": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "nullable": true },
+              "address": { "type": "string", "nullable": true }
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "Email": {
+        "type": "object",
+        "required": ["id", "to", "localPart", "domain", "envelopeFrom", "from", "subject", "text", "html", "workerName", "sourceDomain", "messageId", "receivedAt", "createdAt", "hasRawMime", "rawMimeSize", "groupCount"],
+        "properties": {
+          "id": { "type": "integer" },
+          "to": { "type": "string" },
+          "localPart": { "type": "string" },
+          "domain": { "type": "string" },
+          "envelopeFrom": { "type": "string", "nullable": true },
+          "from": { "$ref": "#/components/schemas/EmailSender" },
+          "subject": { "type": "string" },
+          "text": { "type": "string" },
+          "html": { "type": "string" },
+          "workerName": { "type": "string" },
+          "sourceDomain": { "type": "string" },
+          "messageId": { "type": "string" },
+          "receivedAt": { "type": "string", "format": "date-time" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "hasRawMime": { "type": "boolean" },
+          "rawMimeSize": { "type": "integer" },
+          "groupCount": { "type": "integer" },
+          "rawMime": { "type": "string", "nullable": true }
+        }
+      },
+      "EmailRegister": {
+        "type": "object",
+        "required": ["id", "ownerUserId", "owner", "emailAddress", "localPart", "domain", "emailCount", "latestReceivedAt", "createdAt", "updatedAt"],
+        "properties": {
+          "id": { "type": "integer" },
+          "ownerUserId": { "type": "integer" },
+          "owner": { "$ref": "#/components/schemas/GroupOwner" },
+          "emailAddress": { "type": "string" },
+          "localPart": { "type": "string" },
+          "domain": { "type": "string" },
+          "emailCount": { "type": "integer" },
+          "latestReceivedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "GroupOwner": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["id", "username", "displayName"],
+            "properties": {
+              "id": { "type": "integer" },
+              "username": { "type": "string" },
+              "displayName": { "type": "string" }
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "Group": {
+        "type": "object",
+        "required": ["id", "ownerUserId", "owner", "name", "color", "description", "emailCount", "createdAt", "updatedAt"],
+        "properties": {
+          "id": { "type": "integer" },
+          "ownerUserId": { "type": "integer" },
+          "owner": { "$ref": "#/components/schemas/GroupOwner" },
+          "name": { "type": "string" },
+          "color": { "type": "string" },
+          "description": { "type": "string" },
+          "emailCount": { "type": "integer" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "GroupEmail": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Email" },
+          {
+            "type": "object",
+            "required": ["groupPosition", "groupAddedAt", "groupAddedByUserId"],
+            "properties": {
+              "groupPosition": { "type": "integer" },
+              "groupAddedAt": { "type": "string", "format": "date-time" },
+              "groupAddedByUserId": { "type": "integer", "nullable": true }
+            }
+          }
+        ]
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["username", "password"],
+        "properties": {
+          "username": { "type": "string" },
+          "password": { "type": "string" }
+        }
+      },
+      "RotateApiKeyRequest": {
+        "type": "object",
+        "properties": {
+          "apiKey": { "type": "string", "minLength": 16 }
+        }
+      },
+      "UpdateOwnProfileRequest": {
+        "type": "object",
+        "properties": {
+          "displayName": { "type": "string" },
+          "telegramId": { "type": "string", "nullable": true }
+        }
+      },
+      "ChangePasswordRequest": {
+        "type": "object",
+        "required": ["currentPassword", "newPassword"],
+        "properties": {
+          "currentPassword": { "type": "string" },
+          "newPassword": { "type": "string", "minLength": 8 }
+        }
+      },
+      "CreateUserRequest": {
+        "type": "object",
+        "required": ["username", "password"],
+        "properties": {
+          "username": { "type": "string", "minLength": 3 },
+          "password": { "type": "string", "minLength": 8 },
+          "displayName": { "type": "string" },
+          "telegramId": { "type": "string", "nullable": true },
+          "status": { "type": "string", "enum": ["active", "disabled"] },
+          "generateApiKey": { "type": "boolean" },
+          "apiKey": { "type": "string", "minLength": 16 }
+        }
+      },
+      "UpdateUserRequest": {
+        "type": "object",
+        "properties": {
+          "username": { "type": "string", "minLength": 3 },
+          "password": { "type": "string", "minLength": 8 },
+          "displayName": { "type": "string" },
+          "telegramId": { "type": "string", "nullable": true },
+          "status": { "type": "string", "enum": ["active", "disabled"] }
+        }
+      },
+      "AdminMutationRequest": {
+        "type": "object",
+        "properties": {
+          "userId": { "oneOf": [{ "type": "integer" }, { "type": "string" }] },
+          "username": { "type": "string" }
+        }
+      },
+      "PermissionCreateRequest": {
+        "type": "object",
+        "required": ["role"],
+        "properties": {
+          "userId": { "oneOf": [{ "type": "integer" }, { "type": "string" }] },
+          "username": { "type": "string" },
+          "displayName": { "type": "string" },
+          "telegramId": { "type": "string", "nullable": true },
+          "domain": { "type": "string" },
+          "localPart": { "type": "string", "nullable": true },
+          "role": { "type": "string", "enum": ["viewer", "operator", "admin"] },
+          "status": { "type": "string", "enum": ["active", "disabled"] }
+        }
+      },
+      "PermissionUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "role": { "type": "string", "enum": ["viewer", "operator", "admin"] },
+          "status": { "type": "string", "enum": ["active", "disabled"] }
+        }
+      },
+      "DomainUpsertRequest": {
+        "type": "object",
+        "required": ["domain"],
+        "properties": {
+          "domain": { "type": "string" },
+          "description": { "type": "string" },
+          "status": { "type": "string", "enum": ["active", "disabled"] },
+          "inboundEnabled": { "type": "boolean" },
+          "isDefault": { "type": "boolean" }
+        }
+      },
+      "DomainUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string" },
+          "status": { "type": "string", "enum": ["active", "disabled"] },
+          "inboundEnabled": { "type": "boolean" },
+          "isDefault": { "type": "boolean" }
+        }
+      },
+      "BatchEmailRequest": {
+        "type": "object",
+        "required": ["emailIds"],
+        "properties": {
+          "emailIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+              "oneOf": [{ "type": "integer" }, { "type": "string" }]
+            }
+          },
+          "includeRawMime": { "type": "boolean" }
+        }
+      },
+      "EmailRegisterCreateRequest": {
+        "type": "object",
+        "required": ["emailAddress"],
+        "properties": {
+          "emailAddress": { "type": "string" }
+        }
+      },
+      "GroupRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "color": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      },
+      "GroupEmailBatchRequest": {
+        "type": "object",
+        "required": ["emailIds"],
+        "properties": {
+          "emailIds": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "oneOf": [{ "type": "integer" }, { "type": "string" }]
+            }
+          },
+          "includeRawMime": { "type": "boolean" }
+        }
+      },
+      "SimpleSuccessResponse": {
+        "type": "object",
+        "required": ["success", "requestId"],
+        "properties": {
+          "success": { "type": "boolean" },
+          "requestId": { "$ref": "#/components/schemas/RequestId" }
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Unauthorized",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Forbidden",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Not found",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Conflict",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Health check",
+        "responses": {
+          "200": {
+            "description": "Service health",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Login with username and password",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "tokenType": { "type": "string" },
+                    "sessionToken": { "type": "string" },
+                    "expiresAt": { "type": "string", "format": "date-time" },
+                    "session": { "$ref": "#/components/schemas/Session" },
+                    "account": { "$ref": "#/components/schemas/UserWithPermissions" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/auth/logout": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Logout current session",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "responses": {
+          "200": {
+            "description": "Logout success",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SimpleSuccessResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/auth/refresh": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Refresh session token",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Refreshed session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "tokenType": { "type": "string" },
+                    "sessionToken": { "type": "string" },
+                    "expiresAt": { "type": "string", "format": "date-time" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Session auth required",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/auth/me": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Get current account profile",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "responses": {
+          "200": {
+            "description": "Current account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "account": { "$ref": "#/components/schemas/UserWithPermissions" },
+                    "accessibleDomains": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "patch": {
+        "tags": ["Auth"],
+        "summary": "Update own profile",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateOwnProfileRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "account": { "$ref": "#/components/schemas/UserWithPermissions" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/auth/me/password": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Change own password",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ChangePasswordRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password changed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SimpleSuccessResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/auth/me/api-key/rotate": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Rotate own API key",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RotateApiKeyRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "API key rotated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "user": { "$ref": "#/components/schemas/UserWithPermissions" },
+                    "apiKey": { "type": "string" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/users": {
+      "get": {
+        "tags": ["Users"],
+        "summary": "List users",
+        "description": "Global admin only",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "responses": {
+          "200": {
+            "description": "User list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": { "type": "integer" },
+                    "users": {
+                      "type": "array",
+                      "items": {
+                        "allOf": [
+                          { "$ref": "#/components/schemas/User" },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "permissionCount": { "type": "integer" }
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "post": {
+        "tags": ["Users"],
+        "summary": "Create user",
+        "description": "Global admin only",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateUserRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "user": { "$ref": "#/components/schemas/UserWithPermissions" },
+                    "apiKey": { "type": "string", "nullable": true },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/users/by-telegram/{telegramId}": {
+      "get": {
+        "tags": ["Users"],
+        "summary": "Get user by telegram ID",
+        "description": "Global admin only",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "telegramId",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": { "$ref": "#/components/schemas/UserWithPermissions" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/users/{userId}": {
+      "get": {
+        "tags": ["Users"],
+        "summary": "Get user by ID",
+        "description": "Global admin only",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": { "$ref": "#/components/schemas/UserWithPermissions" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": ["Users"],
+        "summary": "Update user",
+        "description": "Global admin only",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateUserRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "user": { "$ref": "#/components/schemas/UserWithPermissions" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/users/{userId}/api-key/rotate": {
+      "post": {
+        "tags": ["Users"],
+        "summary": "Rotate user API key",
+        "description": "Global admin only",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RotateApiKeyRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "API key rotated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "user": { "$ref": "#/components/schemas/UserWithPermissions" },
+                    "apiKey": { "type": "string" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admins": {
+      "get": {
+        "tags": ["Admins"],
+        "summary": "List admins",
+        "description": "Global admin only",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "responses": {
+          "200": {
+            "description": "Admin list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": { "type": "integer" },
+                    "admins": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/User" }
+                    },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Admins"],
+        "summary": "Grant admin role",
+        "description": "Global admin only",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AdminMutationRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Admin granted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "admin": { "$ref": "#/components/schemas/UserWithPermissions" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admins/{userId}": {
+      "delete": {
+        "tags": ["Admins"],
+        "summary": "Revoke admin role",
+        "description": "Global admin only",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Admin revoked",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SimpleSuccessResponse" }
+              }
+            }
+          },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/v1/permissions": {
+      "get": {
+        "tags": ["Permissions"],
+        "summary": "List permissions",
+        "description": "Global admin only",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "query", "name": "userId", "schema": { "type": "string" } },
+          { "in": "query", "name": "username", "schema": { "type": "string" } },
+          { "in": "query", "name": "domain", "schema": { "type": "string" } },
+          { "in": "query", "name": "localPart", "schema": { "type": "string" } },
+          { "in": "query", "name": "role", "schema": { "type": "string", "enum": ["viewer", "operator", "admin"] } },
+          { "in": "query", "name": "status", "schema": { "type": "string", "enum": ["active", "disabled"] } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Permission list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": { "type": "integer" },
+                    "permissions": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Permission" }
+                    },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Permissions"],
+        "summary": "Create or upsert permission",
+        "description": "Global admin only",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PermissionCreateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Permission created or updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "permission": { "$ref": "#/components/schemas/Permission" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/permissions/{permissionId}": {
+      "get": {
+        "tags": ["Permissions"],
+        "summary": "Get permission by ID",
+        "description": "Global admin only",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "permissionId", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Permission details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "permission": { "$ref": "#/components/schemas/Permission" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": ["Permissions"],
+        "summary": "Update permission",
+        "description": "Global admin only",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "permissionId", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PermissionUpdateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Permission updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "permission": { "$ref": "#/components/schemas/Permission" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Permissions"],
+        "summary": "Delete permission",
+        "description": "Global admin only",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "permissionId", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Permission deleted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SimpleSuccessResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/domains": {
+      "get": {
+        "tags": ["Domains"],
+        "summary": "List domains",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "responses": {
+          "200": {
+            "description": "Domain list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": { "type": "integer" },
+                    "domains": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Domain" }
+                    },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Domains"],
+        "summary": "Create or upsert domain",
+        "description": "Global admin only",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DomainUpsertRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Domain created or updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "domain": { "$ref": "#/components/schemas/Domain" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/domains/{domain}": {
+      "get": {
+        "tags": ["Domains"],
+        "summary": "Get domain",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "domain", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Domain details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "domain": { "$ref": "#/components/schemas/Domain" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": ["Domains"],
+        "summary": "Update domain",
+        "description": "Requires domain admin or global admin",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "domain", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DomainUpdateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Domain updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "domain": { "$ref": "#/components/schemas/Domain" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/domains/{domain}/permissions": {
+      "get": {
+        "tags": ["Domains"],
+        "summary": "List permissions in a domain",
+        "description": "Requires domain admin or global admin",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "domain", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Domain permission list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": { "type": "integer" },
+                    "permissions": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Permission" }
+                    },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Domains"],
+        "summary": "Create or upsert domain permission",
+        "description": "Requires domain admin or global admin",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "domain", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  { "$ref": "#/components/schemas/PermissionCreateRequest" },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "domain": { "readOnly": true }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Permission created or updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "permission": { "$ref": "#/components/schemas/Permission" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/domains/{domain}/permissions/{permissionId}": {
+      "get": {
+        "tags": ["Domains"],
+        "summary": "Get permission in domain",
+        "description": "Requires domain admin or global admin",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "domain", "required": true, "schema": { "type": "string" } },
+          { "in": "path", "name": "permissionId", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Permission details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "permission": { "$ref": "#/components/schemas/Permission" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "patch": {
+        "tags": ["Domains"],
+        "summary": "Update permission in domain",
+        "description": "Requires domain admin or global admin",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "domain", "required": true, "schema": { "type": "string" } },
+          { "in": "path", "name": "permissionId", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PermissionUpdateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Permission updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "permission": { "$ref": "#/components/schemas/Permission" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Domains"],
+        "summary": "Delete permission in domain",
+        "description": "Requires domain admin or global admin",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "domain", "required": true, "schema": { "type": "string" } },
+          { "in": "path", "name": "permissionId", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Permission deleted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SimpleSuccessResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/email-registers": {
+      "get": {
+        "tags": ["EmailRegisters"],
+        "summary": "List mailbox registrations for the current user",
+        "description": "Normal users only see their own registrations. Global admins may pass ownerUserId to inspect another user.",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "query", "name": "ownerUserId", "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Registration list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": { "type": "integer" },
+                    "registrations": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/EmailRegister" }
+                    },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["EmailRegisters"],
+        "summary": "Register a mailbox for monitoring",
+        "description": "Mailbox must still be covered by the caller's permission scope. Each mailbox can only be registered by one user globally. Re-registering the same mailbox by the same user is idempotent.",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/EmailRegisterCreateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Mailbox registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "registration": { "$ref": "#/components/schemas/EmailRegister" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/v1/email-registers/{registrationId}": {
+      "delete": {
+        "tags": ["EmailRegisters"],
+        "summary": "Delete a mailbox registration",
+        "description": "Owners may delete their own registration. Global admins may delete any registration. Removing a registration also removes matching emails from the owner's groups.",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "registrationId", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Registration deleted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SimpleSuccessResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/emails": {
+      "get": {
+        "tags": ["Emails"],
+        "summary": "List emails",
+        "description": "Global admins can list all emails without filters. Normal users only see emails whose mailbox is both permitted and registered in email_registers for that user. domain/address filters narrow the result set.",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "query", "name": "domain", "schema": { "type": "string" } },
+          { "in": "query", "name": "address", "schema": { "type": "string" } },
+          { "in": "query", "name": "limit", "schema": { "type": "integer", "default": 50, "maximum": 200 } },
+          { "in": "query", "name": "offset", "schema": { "type": "integer", "default": 0 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Email list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total": { "type": "integer" },
+                    "count": { "type": "integer" },
+                    "emails": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Email" }
+                    },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad query or missing scope filters",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/emails/batch": {
+      "post": {
+        "tags": ["Emails"],
+        "summary": "Batch fetch emails by ID with partial success",
+        "description": "Partial success response. deniedIds includes emails outside permission scope and, for normal users, emails whose mailbox is not registered. Caller should handle missingIds and deniedIds separately.",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/BatchEmailRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Batch result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": { "type": "integer" },
+                    "emails": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Email" }
+                    },
+                    "missingIds": {
+                      "type": "array",
+                      "items": { "type": "integer" }
+                    },
+                    "deniedIds": {
+                      "type": "array",
+                      "items": { "type": "integer" }
+                    },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/emails/{id}": {
+      "get": {
+        "tags": ["Emails"],
+        "summary": "Get email by ID",
+        "description": "Normal users can only read emails whose mailbox is registered for them and still covered by permission. Global admins can read any email.",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "id", "required": true, "schema": { "type": "integer" } },
+          { "in": "query", "name": "includeRawMime", "schema": { "type": "string", "enum": ["1"] } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Email details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "email": { "$ref": "#/components/schemas/Email" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Emails"],
+        "summary": "Delete email by ID",
+        "description": "Requires operator-or-higher mailbox permission. Normal users must also have the mailbox registered for themselves.",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "id", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Email deleted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SimpleSuccessResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/inboxes/{emailAddress}": {
+      "get": {
+        "tags": ["Inboxes"],
+        "summary": "List emails in a mailbox",
+        "description": "Path emailAddress must be URL-encoded. Normal users must have both mailbox permission and a matching email_registers entry.",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "emailAddress", "required": true, "schema": { "type": "string" } },
+          { "in": "query", "name": "limit", "schema": { "type": "integer", "default": 50, "maximum": 200 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Inbox emails",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "emailAddress": { "type": "string" },
+                    "count": { "type": "integer" },
+                    "emails": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Email" }
+                    },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Inboxes"],
+        "summary": "Delete all emails in a mailbox",
+        "description": "Path emailAddress must be URL-encoded. Requires operator-or-higher mailbox permission and, for normal users, a matching mailbox registration.",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "emailAddress", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Inbox deleted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SimpleSuccessResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/groups": {
+      "get": {
+        "tags": ["Groups"],
+        "summary": "List groups for current user or ownerUserId for admins",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "query", "name": "ownerUserId", "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Group list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": { "type": "integer" },
+                    "groups": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Group" }
+                    },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Groups"],
+        "summary": "Create group",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/GroupRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Group created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "group": { "$ref": "#/components/schemas/Group" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/v1/groups/{groupId}": {
+      "get": {
+        "tags": ["Groups"],
+        "summary": "Get group",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "groupId", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Group details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "group": { "$ref": "#/components/schemas/Group" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": ["Groups"],
+        "summary": "Update group",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "groupId", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/GroupRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Group updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "group": { "$ref": "#/components/schemas/Group" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      },
+      "delete": {
+        "tags": ["Groups"],
+        "summary": "Delete group",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "groupId", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Group deleted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SimpleSuccessResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/groups/{groupId}/emails": {
+      "get": {
+        "tags": ["Groups"],
+        "summary": "List group emails",
+        "description": "Group visibility is evaluated against the group owner's mailbox registrations and permissions. If any saved email id is now missing or denied, the backend removes it from the group and returns 409 so the client can reload.",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "groupId", "required": true, "schema": { "type": "integer" } },
+          { "in": "query", "name": "limit", "schema": { "type": "integer", "default": 100, "maximum": 200 } },
+          { "in": "query", "name": "offset", "schema": { "type": "integer", "default": 0 } },
+          { "in": "query", "name": "includeRawMime", "schema": { "type": "string", "enum": ["1"] } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Group emails",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "group": { "$ref": "#/components/schemas/Group" },
+                    "total": { "type": "integer" },
+                    "count": { "type": "integer" },
+                    "emails": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/GroupEmail" }
+                    },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      },
+      "post": {
+        "tags": ["Groups"],
+        "summary": "Append emails to group",
+        "description": "A group is permanently owned by one user. Every emailId added must resolve to a mailbox registered by that owner, otherwise the request is rejected.",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "groupId", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/GroupEmailBatchRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Emails appended to group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "group": { "$ref": "#/components/schemas/Group" },
+                    "total": { "type": "integer" },
+                    "count": { "type": "integer" },
+                    "emails": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/GroupEmail" }
+                    },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["Groups"],
+        "summary": "Replace group emails",
+        "description": "Replaces the entire group membership. Every emailId must still be visible to the group owner through both permission scope and mailbox registration.",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "groupId", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/GroupEmailBatchRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Group emails replaced",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "group": { "$ref": "#/components/schemas/Group" },
+                    "total": { "type": "integer" },
+                    "count": { "type": "integer" },
+                    "emails": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/GroupEmail" }
+                    },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/groups/{groupId}/emails/{emailId}": {
+      "delete": {
+        "tags": ["Groups"],
+        "summary": "Remove one email from group",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "parameters": [
+          { "in": "path", "name": "groupId", "required": true, "schema": { "type": "integer" } },
+          { "in": "path", "name": "emailId", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Email removed from group",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SimpleSuccessResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/inbound/email": {
+      "post": {
+        "tags": ["Inbound"],
+        "summary": "Ingest raw MIME email from worker",
+        "security": [{ "inboundBearer": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "message/rfc822": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "parameters": [
+          { "in": "header", "name": "X-Email-Envelope-To", "required": false, "schema": { "type": "string" } },
+          { "in": "header", "name": "X-Email-Envelope-From", "required": false, "schema": { "type": "string" } },
+          { "in": "header", "name": "X-Email-Worker-Name", "required": false, "schema": { "type": "string" } },
+          { "in": "header", "name": "X-Email-Received-At", "required": false, "schema": { "type": "string" } },
+          { "in": "header", "name": "X-Email-Domain", "required": false, "schema": { "type": "string" } },
+          { "in": "header", "name": "X-Email-Message-Id", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "202": {
+            "description": "Email accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "id": { "type": "integer" },
+                    "envelopeTo": { "type": "string" },
+                    "domain": { "type": "string" },
+                    "receivedAt": { "type": "string", "format": "date-time" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/maintenance/prune-raw-mime": {
+      "post": {
+        "tags": ["Maintenance"],
+        "summary": "Prune stored raw MIME",
+        "description": "Global admin only",
+        "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }, { "apiKeyAuthScheme": [] }],
+        "responses": {
+          "200": {
+            "description": "Prune result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "skipped": { "type": "boolean" },
+                    "updated": { "type": "integer" },
+                    "requestId": { "$ref": "#/components/schemas/RequestId" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

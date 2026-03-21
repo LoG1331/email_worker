@@ -1,0 +1,333 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+  --font-body: "Manrope", ui-sans-serif, system-ui;
+}
+
+:root {
+  --bg: #f3efe8;
+  --bg-soft: #fbf8f2;
+  --surface: rgba(255, 252, 246, 0.88);
+  --surface-strong: #fffdf8;
+  --surface-muted: #efe7da;
+  --ink: #1d2a2a;
+  --muted: #5d6a67;
+  --line: rgba(29, 42, 42, 0.1);
+  --accent: #135d66;
+  --accent-strong: #0f4d55;
+  --accent-soft: #d7ebe6;
+  --warning: #a15a1c;
+  --warning-soft: #f8ead5;
+  --danger: #a03838;
+  --danger-soft: #f8e1df;
+  --success: #2d6a4f;
+  --success-soft: #deefe5;
+  --shadow-lg: 0 30px 60px -40px rgba(16, 32, 33, 0.4);
+  --shadow-sm: 0 16px 30px -26px rgba(16, 32, 33, 0.22);
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    min-height: 100%;
+    background:
+      radial-gradient(circle at top left, rgba(19, 93, 102, 0.16), transparent 28%),
+      radial-gradient(circle at top right, rgba(161, 90, 28, 0.12), transparent 24%),
+      linear-gradient(180deg, #f8f4ed 0%, #f1ece5 100%);
+  }
+
+  body {
+    min-height: 100vh;
+    margin: 0;
+    color: var(--ink);
+    background:
+      linear-gradient(rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.32)),
+      radial-gradient(circle at 20% 20%, rgba(19, 93, 102, 0.08), transparent 24%),
+      radial-gradient(circle at 80% 0%, rgba(161, 90, 28, 0.08), transparent 20%),
+      var(--bg);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  ::selection {
+    background: rgba(19, 93, 102, 0.18);
+  }
+}
+
+@layer components {
+  .app-shell {
+    position: relative;
+    min-height: 100vh;
+  }
+
+  .app-shell::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.3), transparent 85%);
+  }
+
+  .font-display {
+    font-family: var(--font-display);
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid rgba(255, 255, 255, 0.76);
+    box-shadow: var(--shadow-sm);
+    backdrop-filter: blur(22px);
+  }
+
+  .panel-tone-neutral {
+    background:
+      linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(255, 251, 244, 0.84)),
+      var(--surface);
+  }
+
+  .panel-tone-ocean {
+    background:
+      radial-gradient(circle at top right, rgba(19, 93, 102, 0.12), transparent 32%),
+      linear-gradient(160deg, rgba(235, 247, 244, 0.95), rgba(255, 252, 247, 0.88)),
+      var(--surface);
+  }
+
+  .panel-tone-sage {
+    background:
+      radial-gradient(circle at top left, rgba(45, 106, 79, 0.11), transparent 28%),
+      linear-gradient(160deg, rgba(239, 249, 243, 0.96), rgba(255, 252, 246, 0.86)),
+      var(--surface);
+  }
+
+  .panel-tone-sand {
+    background:
+      radial-gradient(circle at top right, rgba(161, 90, 28, 0.12), transparent 30%),
+      linear-gradient(160deg, rgba(251, 242, 229, 0.96), rgba(255, 252, 246, 0.88)),
+      var(--surface);
+  }
+
+  .panel-tone-ember {
+    background:
+      radial-gradient(circle at top left, rgba(160, 56, 56, 0.11), transparent 30%),
+      linear-gradient(160deg, rgba(252, 241, 238, 0.96), rgba(255, 251, 245, 0.88)),
+      var(--surface);
+  }
+
+  .panel-tone-slate {
+    background:
+      radial-gradient(circle at top right, rgba(29, 42, 42, 0.1), transparent 28%),
+      linear-gradient(160deg, rgba(245, 248, 248, 0.96), rgba(255, 252, 246, 0.88)),
+      var(--surface);
+  }
+
+  .panel-strong {
+    background: var(--surface-strong);
+    border: 1px solid rgba(19, 93, 102, 0.08);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .muted-card {
+    background: linear-gradient(180deg, rgba(239, 231, 218, 0.6), rgba(255, 255, 255, 0.7));
+    border: 1px solid var(--line);
+  }
+
+  .form-input {
+    width: 100%;
+    border-radius: 1rem;
+    border: 1px solid rgba(19, 93, 102, 0.14);
+    background: rgba(255, 255, 255, 0.92);
+    padding: 0.82rem 0.95rem;
+    color: var(--ink);
+    transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  }
+
+  .form-input:focus {
+    outline: none;
+    border-color: rgba(19, 93, 102, 0.4);
+    box-shadow: 0 0 0 4px rgba(19, 93, 102, 0.12);
+  }
+
+  .form-input::placeholder {
+    color: rgba(93, 106, 103, 0.8);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.625rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    padding: 0.8rem 1.2rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease, color 150ms ease;
+  }
+
+  .btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 4px rgba(19, 93, 102, 0.14);
+  }
+
+  .btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent) 0%, #20828d 100%);
+    color: white;
+    box-shadow: 0 18px 30px -20px rgba(19, 93, 102, 0.52);
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+
+  .btn-secondary {
+    border-color: rgba(19, 93, 102, 0.12);
+    background: rgba(255, 255, 255, 0.78);
+    color: var(--ink);
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.96);
+  }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--muted);
+  }
+
+  .btn-ghost:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.52);
+    color: var(--ink);
+  }
+
+  .btn-danger {
+    background: linear-gradient(135deg, var(--danger) 0%, #c75a59 100%);
+    color: white;
+    box-shadow: 0 18px 30px -20px rgba(160, 56, 56, 0.42);
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    padding: 0.35rem 0.7rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+
+  .toast-shell {
+    border-radius: 1rem !important;
+    border: 1px solid rgba(19, 93, 102, 0.1) !important;
+    background: rgba(255, 252, 246, 0.96) !important;
+    color: var(--ink) !important;
+    box-shadow: var(--shadow-lg) !important;
+  }
+
+  .section-header-shell {
+    position: relative;
+    overflow: hidden;
+    border-radius: 2rem;
+    border: 1px solid rgba(255, 255, 255, 0.76);
+    padding: 1.4rem 1.35rem;
+    box-shadow: var(--shadow-sm);
+    backdrop-filter: blur(18px);
+  }
+
+  .section-header-shell::after {
+    content: '';
+    position: absolute;
+    inset: auto -10% -50% auto;
+    width: 14rem;
+    height: 14rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.32);
+    filter: blur(12px);
+    pointer-events: none;
+  }
+
+  .section-tone-neutral {
+    background:
+      linear-gradient(155deg, rgba(255, 252, 246, 0.92), rgba(248, 243, 236, 0.78)),
+      var(--surface);
+  }
+
+  .section-tone-ocean {
+    background:
+      radial-gradient(circle at top right, rgba(19, 93, 102, 0.18), transparent 32%),
+      linear-gradient(155deg, rgba(236, 248, 245, 0.96), rgba(248, 243, 236, 0.82)),
+      var(--surface);
+  }
+
+  .section-tone-sage {
+    background:
+      radial-gradient(circle at top left, rgba(45, 106, 79, 0.16), transparent 32%),
+      linear-gradient(155deg, rgba(241, 250, 244, 0.96), rgba(248, 243, 236, 0.82)),
+      var(--surface);
+  }
+
+  .section-tone-sand {
+    background:
+      radial-gradient(circle at top right, rgba(161, 90, 28, 0.16), transparent 30%),
+      linear-gradient(155deg, rgba(252, 244, 233, 0.96), rgba(248, 243, 236, 0.82)),
+      var(--surface);
+  }
+
+  .section-tone-ember {
+    background:
+      radial-gradient(circle at top left, rgba(160, 56, 56, 0.14), transparent 32%),
+      linear-gradient(155deg, rgba(252, 241, 238, 0.96), rgba(248, 243, 236, 0.82)),
+      var(--surface);
+  }
+
+  .section-tone-slate {
+    background:
+      radial-gradient(circle at top right, rgba(29, 42, 42, 0.12), transparent 30%),
+      linear-gradient(155deg, rgba(244, 248, 248, 0.96), rgba(248, 243, 236, 0.82)),
+      var(--surface);
+  }
+}
+
+@layer utilities {
+  @media (min-width: 640px) {
+    .form-input {
+      padding: 0.9rem 1rem;
+    }
+  }
+}
+
+#root {
+  min-height: 100vh;
+}

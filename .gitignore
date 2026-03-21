@@ -44,6 +44,7 @@ coverage/
 *.temp
 .cache/
 .agent/
+data/
 
 # OS
 Thumbs.db

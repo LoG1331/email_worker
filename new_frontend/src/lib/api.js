@@ -1,0 +1,394 @@
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
+
+export class ApiError extends Error {
+  constructor(message, { status = 500, details = null, requestId = null } = {}) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.details = details
+    this.requestId = requestId
+  }
+}
+
+function isPresent(value) {
+  return value !== undefined && value !== null && value !== ''
+}
+
+function withQuery(path, params = {}) {
+  const search = new URLSearchParams()
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (!isPresent(value)) {
+      return
+    }
+
+    search.set(key, String(value))
+  })
+
+  const query = search.toString()
+  return query ? `${path}?${query}` : path
+}
+
+async function parseResponse(response) {
+  const text = await response.text()
+
+  if (!text) {
+    return null
+  }
+
+  try {
+    return JSON.parse(text)
+  } catch {
+    return text
+  }
+}
+
+async function request(path, { method = 'GET', token, body, headers = {} } = {}) {
+  const finalHeaders = new Headers(headers)
+
+  if (token) {
+    finalHeaders.set('Authorization', `Bearer ${token}`)
+  }
+
+  let requestBody
+
+  if (body !== undefined) {
+    finalHeaders.set('Content-Type', 'application/json')
+    requestBody = JSON.stringify(body)
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method,
+    headers: finalHeaders,
+    body: requestBody,
+  })
+
+  const payload = await parseResponse(response)
+
+  if (!response.ok) {
+    throw new ApiError(
+      payload?.error || `Request failed with ${response.status}`,
+      {
+        status: response.status,
+        details: payload?.details ?? null,
+        requestId: payload?.requestId ?? null,
+      },
+    )
+  }
+
+  return payload
+}
+
+export function getApiBaseUrl() {
+  return API_BASE_URL || window.location.origin
+}
+
+export function getHealth() {
+  return request('/health')
+}
+
+export function login(payload) {
+  return request('/v1/auth/login', {
+    method: 'POST',
+    body: payload,
+  })
+}
+
+export function logout(token) {
+  return request('/v1/auth/logout', {
+    method: 'POST',
+    token,
+  })
+}
+
+export function refreshSession(token) {
+  return request('/v1/auth/refresh', {
+    method: 'POST',
+    token,
+  })
+}
+
+export function getMe(token) {
+  return request('/v1/auth/me', { token })
+}
+
+export function updateMe(token, payload) {
+  return request('/v1/auth/me', {
+    method: 'PATCH',
+    token,
+    body: payload,
+  })
+}
+
+export function changeMyPassword(token, payload) {
+  return request('/v1/auth/me/password', {
+    method: 'POST',
+    token,
+    body: payload,
+  })
+}
+
+export function rotateMyApiKey(token, payload = {}) {
+  return request('/v1/auth/me/api-key/rotate', {
+    method: 'POST',
+    token,
+    body: payload,
+  })
+}
+
+export function listUsers(token) {
+  return request('/v1/users', { token })
+}
+
+export function getUserById(token, userId) {
+  return request(`/v1/users/${userId}`, { token })
+}
+
+export function getUserByTelegramId(token, telegramId) {
+  return request(`/v1/users/by-telegram/${telegramId}`, { token })
+}
+
+export function createUser(token, payload) {
+  return request('/v1/users', {
+    method: 'POST',
+    token,
+    body: payload,
+  })
+}
+
+export function updateUser(token, userId, payload) {
+  return request(`/v1/users/${userId}`, {
+    method: 'PATCH',
+    token,
+    body: payload,
+  })
+}
+
+export function listAdmins(token) {
+  return request('/v1/admins', { token })
+}
+
+export function grantAdmin(token, payload) {
+  return request('/v1/admins', {
+    method: 'POST',
+    token,
+    body: payload,
+  })
+}
+
+export function revokeAdmin(token, userId) {
+  return request(`/v1/admins/${userId}`, {
+    method: 'DELETE',
+    token,
+  })
+}
+
+export function listPermissions(token, filters = {}) {
+  return request(withQuery('/v1/permissions', filters), { token })
+}
+
+export function createPermission(token, payload) {
+  return request('/v1/permissions', {
+    method: 'POST',
+    token,
+    body: payload,
+  })
+}
+
+export function getPermission(token, permissionId) {
+  return request(`/v1/permissions/${permissionId}`, { token })
+}
+
+export function updatePermission(token, permissionId, payload) {
+  return request(`/v1/permissions/${permissionId}`, {
+    method: 'PATCH',
+    token,
+    body: payload,
+  })
+}
+
+export function deletePermission(token, permissionId) {
+  return request(`/v1/permissions/${permissionId}`, {
+    method: 'DELETE',
+    token,
+  })
+}
+
+export function listDomains(token) {
+  return request('/v1/domains', { token })
+}
+
+export function createDomain(token, payload) {
+  return request('/v1/domains', {
+    method: 'POST',
+    token,
+    body: payload,
+  })
+}
+
+export function getDomain(token, domain) {
+  return request(`/v1/domains/${encodeURIComponent(domain)}`, { token })
+}
+
+export function updateDomain(token, domain, payload) {
+  return request(`/v1/domains/${encodeURIComponent(domain)}`, {
+    method: 'PATCH',
+    token,
+    body: payload,
+  })
+}
+
+export function listDomainPermissions(token, domain) {
+  return request(`/v1/domains/${encodeURIComponent(domain)}/permissions`, { token })
+}
+
+export function createDomainPermission(token, domain, payload) {
+  return request(`/v1/domains/${encodeURIComponent(domain)}/permissions`, {
+    method: 'POST',
+    token,
+    body: payload,
+  })
+}
+
+export function getDomainPermission(token, domain, permissionId) {
+  return request(`/v1/domains/${encodeURIComponent(domain)}/permissions/${permissionId}`, { token })
+}
+
+export function updateDomainPermission(token, domain, permissionId, payload) {
+  return request(`/v1/domains/${encodeURIComponent(domain)}/permissions/${permissionId}`, {
+    method: 'PATCH',
+    token,
+    body: payload,
+  })
+}
+
+export function deleteDomainPermission(token, domain, permissionId) {
+  return request(`/v1/domains/${encodeURIComponent(domain)}/permissions/${permissionId}`, {
+    method: 'DELETE',
+    token,
+  })
+}
+
+export function listEmailRegisters(token, filters = {}) {
+  return request(withQuery('/v1/email-registers', filters), { token })
+}
+
+export function createEmailRegister(token, payload) {
+  return request('/v1/email-registers', {
+    method: 'POST',
+    token,
+    body: payload,
+  })
+}
+
+export function deleteEmailRegister(token, registrationId) {
+  return request(`/v1/email-registers/${registrationId}`, {
+    method: 'DELETE',
+    token,
+  })
+}
+
+export function listEmails(token, filters = {}) {
+  return request(withQuery('/v1/emails', filters), { token })
+}
+
+export function batchFetchEmails(token, payload) {
+  return request('/v1/emails/batch', {
+    method: 'POST',
+    token,
+    body: payload,
+  })
+}
+
+export function getEmailById(token, id, options = {}) {
+  return request(withQuery(`/v1/emails/${id}`, {
+    includeRawMime: options.includeRawMime ? 1 : undefined,
+  }), { token })
+}
+
+export function deleteEmailById(token, id) {
+  return request(`/v1/emails/${id}`, {
+    method: 'DELETE',
+    token,
+  })
+}
+
+export function getInboxByAddress(token, emailAddress, limit) {
+  return request(withQuery(`/v1/inboxes/${encodeURIComponent(emailAddress)}`, { limit }), { token })
+}
+
+export function clearInbox(token, emailAddress) {
+  return request(`/v1/inboxes/${encodeURIComponent(emailAddress)}`, {
+    method: 'DELETE',
+    token,
+  })
+}
+
+export function listGroups(token, filters = {}) {
+  return request(withQuery('/v1/groups', filters), { token })
+}
+
+export function createGroup(token, payload) {
+  return request('/v1/groups', {
+    method: 'POST',
+    token,
+    body: payload,
+  })
+}
+
+export function getGroup(token, groupId) {
+  return request(`/v1/groups/${groupId}`, { token })
+}
+
+export function updateGroup(token, groupId, payload) {
+  return request(`/v1/groups/${groupId}`, {
+    method: 'PATCH',
+    token,
+    body: payload,
+  })
+}
+
+export function deleteGroup(token, groupId) {
+  return request(`/v1/groups/${groupId}`, {
+    method: 'DELETE',
+    token,
+  })
+}
+
+export function getGroupEmails(token, groupId, options = {}) {
+  return request(withQuery(`/v1/groups/${groupId}/emails`, {
+    limit: options.limit,
+    offset: options.offset,
+    includeRawMime: options.includeRawMime ? 1 : undefined,
+  }), { token })
+}
+
+export function addGroupEmails(token, groupId, payload) {
+  return request(`/v1/groups/${groupId}/emails`, {
+    method: 'POST',
+    token,
+    body: payload,
+  })
+}
+
+export function replaceGroupEmails(token, groupId, payload) {
+  return request(`/v1/groups/${groupId}/emails`, {
+    method: 'PUT',
+    token,
+    body: payload,
+  })
+}
+
+export function removeGroupEmail(token, groupId, emailId) {
+  return request(`/v1/groups/${groupId}/emails/${emailId}`, {
+    method: 'DELETE',
+    token,
+  })
+}
+
+export function pruneRawMime(token) {
+  return request('/v1/maintenance/prune-raw-mime', {
+    method: 'POST',
+    token,
+  })
+}
