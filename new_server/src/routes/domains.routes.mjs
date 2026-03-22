@@ -10,10 +10,10 @@ import {
     listAccessibleDomains
 } from '../services/account-service.mjs';
 import {
+    createDomain,
+    deleteDomain,
     getDomain,
-    listDomains,
-    updateDomain,
-    upsertDomain
+    listDomains
 } from '../services/domain-service.mjs';
 
 const statusSchema = z.enum(['active', 'disabled']);
@@ -21,15 +21,8 @@ const domainSchema = z.string().trim().min(1).refine(value => isValidDomain(valu
     message: 'Invalid domain format'
 });
 
-const domainUpsertSchema = z.object({
+const domainCreateSchema = z.object({
     domain: domainSchema,
-    description: z.string().optional(),
-    status: statusSchema.optional(),
-    inboundEnabled: z.boolean().optional(),
-    isDefault: z.boolean().optional()
-});
-
-const domainUpdateSchema = z.object({
     description: z.string().optional(),
     status: statusSchema.optional(),
     inboundEnabled: z.boolean().optional(),
@@ -63,8 +56,8 @@ export function createDomainsRouter(config) {
 
     router.post('/', asyncHandler(async (req, res) => {
         assertSuperAdmin(req.auth);
-        const payload = domainUpsertSchema.parse(req.body);
-        const domain = await upsertDomain(config, payload);
+        const payload = domainCreateSchema.parse(req.body);
+        const domain = await createDomain(config, payload);
         res.status(201).json({
             success: true,
             domain,
@@ -81,13 +74,11 @@ export function createDomainsRouter(config) {
         });
     }));
 
-    router.patch('/:domain', asyncHandler(async (req, res) => {
+    router.delete('/:domain', asyncHandler(async (req, res) => {
         assertSuperAdmin(req.auth);
-        const payload = domainUpdateSchema.parse(req.body);
-        const domain = await updateDomain(config, req.params.domain, payload);
+        const result = await deleteDomain(config, req.params.domain);
         res.json({
-            success: true,
-            domain,
+            ...result,
             requestId: req.requestId
         });
     }));

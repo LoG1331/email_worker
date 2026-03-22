@@ -17,7 +17,6 @@ function GrantAdminModal({ open, form, onChange, onSubmit, onClose }) {
       onClose={onClose}
       eyebrow="Admin"
       title="Cấp quyền admin"
-      description="Thêm một người dùng vào bảng admin bằng user ID hoặc tên đăng nhập."
       tone="ocean"
       size="md"
     >

@@ -1,4 +1,9 @@
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const DEFAULT_TELEGRAM_API_BASE_URL = 'https://api.telegram.org';
+const CONFIG_DIR = path.dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = path.resolve(CONFIG_DIR, '..', '..');
 
 function parseBoolean(value, defaultValue = false) {
     if (value === undefined || value === null || value === '') {
@@ -25,17 +30,27 @@ function parseList(value) {
         .filter(Boolean);
 }
 
+function cleanText(value) {
+    return String(value || '').trim();
+}
+
 export function loadConfig(env = process.env) {
+    const inboundAuthToken = cleanText(env.INBOUND_AUTH_TOKEN);
+    const configuredJwtSecret = cleanText(env.AUTH_JWT_SECRET);
+    const configuredApiKeyPepper = cleanText(env.API_KEY_PEPPER);
     const config = {
         nodeEnv: env.NODE_ENV || 'development',
         host: env.HOST || '0.0.0.0',
         port: parseInteger(env.PORT, 3001, { min: 1, max: 65535 }),
-        sqlitePath: env.NEW_SERVER_SQLITE_PATH
-            || env.SQLITE_PATH
-            || path.resolve(process.cwd(), 'data', 'new-server.sqlite'),
-        inboundAuthToken: env.INBOUND_AUTH_TOKEN || env.FORWARD_AUTH_TOKEN || '',
-        jwtSecret: env.AUTH_JWT_SECRET || env.JWT_SECRET || env.INBOUND_AUTH_TOKEN || env.FORWARD_AUTH_TOKEN || '',
-        apiKeyPepper: env.API_KEY_PEPPER || env.AUTH_JWT_SECRET || env.JWT_SECRET || env.INBOUND_AUTH_TOKEN || env.FORWARD_AUTH_TOKEN || '',
+        sqlitePath: env.NEW_SERVER_SQLITE_PATH || path.resolve(PROJECT_ROOT, 'data', 'new-server.sqlite'),
+        frontendDistPath: path.resolve(PROJECT_ROOT, 'new_frontend', 'dist'),
+        inboundAuthToken,
+        jwtSecret: configuredJwtSecret,
+        apiKeyPepper: configuredApiKeyPepper,
+        legacyJwtSecret: '',
+        legacyApiKeyPepper: '',
+        legacyJwtSecrets: [],
+        legacyApiKeyPeppers: [],
         sessionTtlMs: parseInteger(env.SESSION_TTL_MS, 7 * 24 * 60 * 60 * 1000, {
             min: 5 * 60 * 1000,
             max: 365 * 24 * 60 * 60 * 1000
@@ -46,9 +61,6 @@ export function loadConfig(env = process.env) {
         }),
         bootstrapAdminUsername: String(env.BOOTSTRAP_ADMIN_USERNAME || '').trim(),
         bootstrapAdminPassword: String(env.BOOTSTRAP_ADMIN_PASSWORD || ''),
-        bootstrapAdminDisplayName: String(env.BOOTSTRAP_ADMIN_DISPLAY_NAME || 'Bootstrap Admin').trim(),
-        bootstrapAdminTelegramId: String(env.BOOTSTRAP_ADMIN_TELEGRAM_ID || '').trim(),
-        bootstrapAdminApiKey: String(env.BOOTSTRAP_ADMIN_API_KEY || '').trim(),
         maxEmailSizeBytes: parseInteger(env.MAX_EMAIL_SIZE_BYTES, 25 * 1024 * 1024, {
             min: 1024,
             max: 50 * 1024 * 1024
@@ -57,7 +69,7 @@ export function loadConfig(env = process.env) {
             min: 1024,
             max: 5 * 1024 * 1024
         }),
-        corsAllowedOrigins: parseList(env.CORS_ALLOWED_ORIGINS || env.CORS_ORIGIN),
+        corsAllowedOrigins: parseList(env.CORS_ALLOWED_ORIGINS),
         trustProxy: parseBoolean(env.TRUST_PROXY, false),
         autoCreateDomainsOnIngress: parseBoolean(env.AUTO_CREATE_DOMAINS_ON_INGEST, false),
         storeRawMime: parseBoolean(env.STORE_RAW_MIME, true),
@@ -74,30 +86,36 @@ export function loadConfig(env = process.env) {
             min: 1,
             max: 100000
         }),
-        authRateLimitWindowMs: parseInteger(env.AUTH_RATE_LIMIT_WINDOW_MS || env.ADMIN_RATE_LIMIT_WINDOW_MS, 60 * 1000, {
+        authRateLimitWindowMs: parseInteger(env.AUTH_RATE_LIMIT_WINDOW_MS, 60 * 1000, {
             min: 1000,
             max: 24 * 60 * 60 * 1000
         }),
-        authRateLimitMax: parseInteger(env.AUTH_RATE_LIMIT_MAX || env.ADMIN_RATE_LIMIT_MAX, 300, {
+        authRateLimitMax: parseInteger(env.AUTH_RATE_LIMIT_MAX, 300, {
             min: 1,
             max: 100000
-        })
+        }),
+        telegramApiBaseUrl: DEFAULT_TELEGRAM_API_BASE_URL,
+        telegramWebhookRateLimitWindowMs: 60 * 1000,
+        telegramWebhookRateLimitMax: 120,
+        telegramOutboxPollIntervalMs: 1000,
+        telegramOutboxBatchSize: 10,
+        telegramOutboxMaxAttempts: 8,
+        telegramOutboxBaseBackoffMs: 5000,
+        telegramSettings: null
     };
 
     if (!config.inboundAuthToken) {
-        throw new Error('INBOUND_AUTH_TOKEN or FORWARD_AUTH_TOKEN is required for new_server');
-    }
-
-    if (!config.jwtSecret) {
-        throw new Error('AUTH_JWT_SECRET, JWT_SECRET, or INBOUND_AUTH_TOKEN is required for JWT auth');
-    }
-
-    if (!config.apiKeyPepper) {
-        throw new Error('API_KEY_PEPPER, AUTH_JWT_SECRET, JWT_SECRET, or INBOUND_AUTH_TOKEN is required for api key hashing');
+        throw new Error('INBOUND_AUTH_TOKEN is required for new_server');
     }
 
     if ((config.bootstrapAdminUsername || config.bootstrapAdminPassword) && (!config.bootstrapAdminUsername || !config.bootstrapAdminPassword)) {
         throw new Error('BOOTSTRAP_ADMIN_USERNAME and BOOTSTRAP_ADMIN_PASSWORD must be configured together');
+    }
+
+    try {
+        new URL(config.telegramApiBaseUrl);
+    } catch {
+        throw new Error('Default Telegram API URL is invalid');
     }
 
     return config;

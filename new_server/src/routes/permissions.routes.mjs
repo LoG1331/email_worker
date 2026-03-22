@@ -3,11 +3,10 @@ import { z } from 'zod';
 import { asyncHandler } from '../utils/async-handler.mjs';
 import {
     assertSuperAdmin,
+    createPermission,
     deletePermission,
     getPermissionById,
-    listPermissions,
-    updatePermission,
-    upsertPermission
+    listPermissions
 } from '../services/account-service.mjs';
 import { parsePagination } from '../utils/http.mjs';
 
@@ -20,12 +19,6 @@ const permissionCreateSchema = z.object({
     status: z.enum(['active', 'disabled']).optional()
 }).refine(payload => payload.userId !== undefined || payload.username !== undefined, {
     message: 'userId or username is required'
-});
-
-const permissionUpdateSchema = z.object({
-    status: z.enum(['active', 'disabled']).optional()
-}).refine(payload => payload.status !== undefined, {
-    message: 'status is required'
 });
 
 export function createPermissionsRouter(config) {
@@ -53,7 +46,7 @@ export function createPermissionsRouter(config) {
     router.post('/', asyncHandler(async (req, res) => {
         assertSuperAdmin(req.auth);
         const payload = permissionCreateSchema.parse(req.body);
-        const permission = await upsertPermission(config, payload, req.auth);
+        const permission = await createPermission(config, payload, req.auth);
         res.status(201).json({
             success: true,
             permission,
@@ -65,17 +58,6 @@ export function createPermissionsRouter(config) {
         assertSuperAdmin(req.auth);
         const permission = await getPermissionById(config, req.params.permissionId);
         res.json({
-            permission,
-            requestId: req.requestId
-        });
-    }));
-
-    router.patch('/:permissionId', asyncHandler(async (req, res) => {
-        assertSuperAdmin(req.auth);
-        const payload = permissionUpdateSchema.parse(req.body);
-        const permission = await updatePermission(config, req.params.permissionId, payload, req.auth);
-        res.json({
-            success: true,
             permission,
             requestId: req.requestId
         });

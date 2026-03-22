@@ -130,6 +130,61 @@ function safeEqual(left, right) {
     return timingSafeEqual(leftBuffer, rightBuffer);
 }
 
+function uniqueStrings(values) {
+    return [...new Set(values.filter(Boolean))];
+}
+
+function uniqueNumericIds(values) {
+    return [...new Set(
+        values
+            .map(value => Number(value))
+            .filter(value => Number.isInteger(value) && value > 0)
+    )];
+}
+
+async function reindexGroupPositionsTx(db, groupIds) {
+    for (const groupId of uniqueNumericIds(groupIds)) {
+        const rows = await db.all(
+            `
+                SELECT id
+                FROM group_emails
+                WHERE group_id = ?
+                ORDER BY position ASC, id ASC
+            `,
+            [groupId]
+        );
+
+        let position = 0;
+        for (const row of rows) {
+            position += 1;
+            await db.run(
+                `
+                    UPDATE group_emails
+                    SET position = ?
+                    WHERE id = ?
+                `,
+                [position, row.id]
+            );
+        }
+    }
+}
+
+async function touchGroupsTx(db, groupIds) {
+    const normalizedGroupIds = uniqueNumericIds(groupIds);
+    if (!normalizedGroupIds.length) {
+        return;
+    }
+
+    await db.run(
+        `
+            UPDATE groups
+            SET updated_at = ?
+            WHERE id IN (${normalizedGroupIds.map(() => '?').join(', ')})
+        `,
+        [nowIso(), ...normalizedGroupIds]
+    );
+}
+
 function base64UrlEncode(value) {
     const buffer = Buffer.isBuffer(value)
         ? value
@@ -141,17 +196,21 @@ function base64UrlDecode(value) {
     return Buffer.from(String(value || ''), 'base64url').toString('utf8');
 }
 
-function hashApiKey(config, apiKey) {
+function hashApiKeyWithPepper(apiKeyPepper, apiKey) {
     return createHash('sha256')
-        .update(`${config.apiKeyPepper}:${apiKey}`)
+        .update(`${apiKeyPepper}:${apiKey}`)
         .digest('hex');
+}
+
+function hashApiKey(config, apiKey) {
+    return hashApiKeyWithPepper(config.apiKeyPepper, apiKey);
 }
 
 function generateApiKey() {
     return `ewk_${randomBytes(24).toString('base64url')}`;
 }
 
-function signJwt(config, payload, expiresAtMs) {
+function signJwtWithSecret(jwtSecret, payload, expiresAtMs) {
     const header = { alg: 'HS256', typ: 'JWT' };
     const nowSeconds = Math.floor(Date.now() / 1000);
     const fullPayload = {
@@ -161,21 +220,25 @@ function signJwt(config, payload, expiresAtMs) {
     };
 
     const signingInput = `${base64UrlEncode(header)}.${base64UrlEncode(fullPayload)}`;
-    const signature = createHmac('sha256', config.jwtSecret)
+    const signature = createHmac('sha256', jwtSecret)
         .update(signingInput)
         .digest('base64url');
 
     return `${signingInput}.${signature}`;
 }
 
-function verifyJwt(config, token, expectedTokenType = 'session') {
+function signJwt(config, payload, expiresAtMs) {
+    return signJwtWithSecret(config.jwtSecret, payload, expiresAtMs);
+}
+
+function verifyJwtWithSecret(jwtSecret, token, expectedTokenType = 'session') {
     const [encodedHeader, encodedPayload, signature] = String(token || '').split('.');
     if (!encodedHeader || !encodedPayload || !signature) {
         throw new HttpError(401, 'Invalid session token');
     }
 
     const signingInput = `${encodedHeader}.${encodedPayload}`;
-    const expectedSignature = createHmac('sha256', config.jwtSecret)
+    const expectedSignature = createHmac('sha256', jwtSecret)
         .update(signingInput)
         .digest('base64url');
 
@@ -200,6 +263,24 @@ function verifyJwt(config, token, expectedTokenType = 'session') {
     }
 
     return payload;
+}
+
+function verifyJwt(config, token, expectedTokenType = 'session') {
+    const jwtSecrets = uniqueStrings([config.jwtSecret, ...(config.legacyJwtSecrets || [])]);
+    let lastError = null;
+
+    for (const jwtSecret of jwtSecrets) {
+        try {
+            return verifyJwtWithSecret(jwtSecret, token, expectedTokenType);
+        } catch (error) {
+            if (!(error instanceof HttpError) || error.status !== 401) {
+                throw error;
+            }
+            lastError = error;
+        }
+    }
+
+    throw lastError || new HttpError(401, 'Invalid session token');
 }
 
 function mapUserRow(row, { isAdmin = false, includePasswordState = true } = {}) {
@@ -354,6 +435,21 @@ async function loadAuthUserById(db, userId) {
         `,
         [userId]
     );
+}
+
+async function countActiveAdminsTx(db, { excludeUserId = null } = {}) {
+    const row = await db.get(
+        `
+            SELECT COUNT(*) AS total
+            FROM admins a
+            JOIN users u ON u.id = a.user_id
+            WHERE u.status = 'active'
+              AND (? IS NULL OR a.user_id != ?)
+        `,
+        [excludeUserId, excludeUserId]
+    );
+
+    return Number(row?.total || 0);
 }
 
 function buildAuthContext(row, mode, session = null) {
@@ -554,6 +650,91 @@ async function resolvePermissionTargetUserTx(db, payload) {
     );
 
     return getUserRecordById(db, result.lastID);
+}
+
+async function cleanupPermissionDerivedStateTx(db, permission) {
+    const permissionOwnerIsAdmin = await db.get(
+        `
+            SELECT 1
+            FROM admins
+            WHERE user_id = ?
+            LIMIT 1
+        `,
+        [permission.user_id]
+    );
+
+    if (permissionOwnerIsAdmin) {
+        return;
+    }
+
+    const affectedGroupRows = await db.all(
+        `
+            SELECT DISTINCT g.id
+            FROM groups g
+            JOIN group_emails ge ON ge.group_id = g.id
+            JOIN emails e ON e.id = ge.email_id
+            WHERE g.owner_user_id = ?
+              AND e.domain_id = ?
+            ORDER BY g.id ASC
+        `,
+        [permission.user_id, permission.domain_id]
+    );
+
+    await db.run(
+        `
+            DELETE FROM email_registers
+            WHERE owner_user_id = ?
+              AND domain_id = ?
+        `,
+        [permission.user_id, permission.domain_id]
+    );
+
+    await db.run(
+        `
+            DELETE FROM group_emails
+            WHERE group_id IN (
+                SELECT id
+                FROM groups
+                WHERE owner_user_id = ?
+            )
+              AND email_id IN (
+                SELECT id
+                FROM emails
+                WHERE domain_id = ?
+            )
+        `,
+        [permission.user_id, permission.domain_id]
+    );
+
+    const owner = await db.get(
+        `
+            SELECT telegram_id
+            FROM users
+            WHERE id = ?
+            LIMIT 1
+        `,
+        [permission.user_id]
+    );
+
+    if (cleanText(owner?.telegram_id)) {
+        await db.run(
+            `
+                DELETE FROM telegram_outbox
+                WHERE chat_id = ?
+                  AND status != 'sent'
+                  AND email_id IN (
+                      SELECT id
+                      FROM emails
+                      WHERE domain_id = ?
+                  )
+            `,
+            [owner.telegram_id, permission.domain_id]
+        );
+    }
+
+    const affectedGroupIds = affectedGroupRows.map(row => row.id);
+    await reindexGroupPositionsTx(db, affectedGroupIds);
+    await touchGroupsTx(db, affectedGroupIds);
 }
 
 export async function hashPassword(password) {
@@ -859,6 +1040,24 @@ export async function updateUser(config, userId, payload) {
             status: payload.status === undefined ? current.status : normalizeUserStatus(payload.status, current.status),
             passwordHash: payload.password === undefined ? current.password_hash : await hashPassword(payload.password)
         };
+        const currentAdminRow = await db.get(
+            `
+                SELECT 1
+                FROM admins
+                WHERE user_id = ?
+                LIMIT 1
+            `,
+            [numericUserId]
+        );
+
+        if (currentAdminRow && current.status === 'active' && updates.status !== 'active') {
+            const remainingActiveAdmins = await countActiveAdminsTx(db, {
+                excludeUserId: numericUserId
+            });
+            if (remainingActiveAdmins <= 0) {
+                throw new HttpError(409, 'Cannot disable the last active admin');
+            }
+        }
 
         await db.run(
             `
@@ -1073,14 +1272,27 @@ export async function grantAdmin(config, payload, auth) {
 export async function revokeAdmin(config, userId) {
     const numericUserId = parseNumericId(userId, 'user id');
     await withTransaction(config, async (db) => {
-        const totalAdminsRow = await db.get(`SELECT COUNT(*) AS total FROM admins`);
-        const isAdminRow = await db.get(`SELECT user_id FROM admins WHERE user_id = ? LIMIT 1`, [numericUserId]);
-        if (!isAdminRow) {
+        const adminRow = await db.get(
+            `
+                SELECT a.user_id, u.status
+                FROM admins a
+                JOIN users u ON u.id = a.user_id
+                WHERE a.user_id = ?
+                LIMIT 1
+            `,
+            [numericUserId]
+        );
+        if (!adminRow) {
             return;
         }
 
-        if ((totalAdminsRow?.total || 0) <= 1) {
-            throw new HttpError(409, 'Cannot remove the last admin');
+        if (adminRow.status === 'active') {
+            const remainingActiveAdmins = await countActiveAdminsTx(db, {
+                excludeUserId: numericUserId
+            });
+            if (remainingActiveAdmins <= 0) {
+                throw new HttpError(409, 'Cannot remove the last active admin');
+            }
         }
 
         await db.run(`DELETE FROM admins WHERE user_id = ?`, [numericUserId]);
@@ -1168,7 +1380,7 @@ export async function listPermissions(config, filters = {}, pagination = {}) {
     };
 }
 
-export async function upsertPermission(config, payload, auth) {
+export async function createPermission(config, payload, auth) {
     const normalizedDomain = normalizeDomain(payload.domain);
     if (!normalizedDomain) {
         throw new HttpError(400, 'Valid domain is required');
@@ -1191,26 +1403,7 @@ export async function upsertPermission(config, payload, auth) {
         );
 
         if (current) {
-            await db.run(
-                `
-                    UPDATE permissions
-                    SET status = ?,
-                        granted_by_user_id = ?,
-                        granted_by_label = ?,
-                        updated_at = ?
-                    WHERE id = ?
-                `,
-                [
-                    normalizePermissionStatus(payload.status, 'active'),
-                    auth?.userId || null,
-                    getAuditActor(auth),
-                    now,
-                    current.id
-                ]
-            );
-
-            permissionId = current.id;
-            return;
+            throw new HttpError(409, 'Permission already exists for this user and domain');
         }
 
         const result = await db.run(
@@ -1239,15 +1432,6 @@ export async function upsertPermission(config, payload, auth) {
 
         permissionId = result.lastID || null;
     });
-
-    const { permissions } = await listPermissions(config, { domain: normalizedDomain }, {
-        limit: 1,
-        offset: 0
-    });
-    const [permission] = permissions;
-    if (!permissionId) {
-        return permission || null;
-    }
 
     return getPermissionById(config, permissionId);
 }
@@ -1289,40 +1473,28 @@ export async function getPermissionById(config, permissionId) {
     return mapPermissionRow(row);
 }
 
-export async function updatePermission(config, permissionId, payload, auth) {
-    const numericPermissionId = parseNumericId(permissionId, 'permission id');
-    await withTransaction(config, async (db) => {
-        const current = await db.get(`SELECT * FROM permissions WHERE id = ? LIMIT 1`, [numericPermissionId]);
-        if (!current) {
-            throw new HttpError(404, 'Permission not found');
-        }
-
-        await db.run(
-            `
-                UPDATE permissions
-                SET status = ?,
-                    granted_by_user_id = ?,
-                    granted_by_label = ?,
-                    updated_at = ?
-                WHERE id = ?
-            `,
-            [
-                payload.status === undefined ? current.status : normalizePermissionStatus(payload.status, current.status),
-                auth?.userId || null,
-                getAuditActor(auth),
-                nowIso(),
-                numericPermissionId
-            ]
-        );
-    });
-
-    return getPermissionById(config, numericPermissionId);
-}
-
 export async function deletePermission(config, permissionId) {
     const numericPermissionId = parseNumericId(permissionId, 'permission id');
-    const db = await getDb(config);
-    await db.run(`DELETE FROM permissions WHERE id = ?`, [numericPermissionId]);
+
+    await withTransaction(config, async (db) => {
+        const permission = await db.get(
+            `
+                SELECT id, user_id, domain_id
+                FROM permissions
+                WHERE id = ?
+                LIMIT 1
+            `,
+            [numericPermissionId]
+        );
+
+        if (!permission) {
+            return;
+        }
+
+        await db.run(`DELETE FROM permissions WHERE id = ?`, [numericPermissionId]);
+        await cleanupPermissionDerivedStateTx(db, permission);
+    });
+
     return { success: true };
 }
 
@@ -1417,6 +1589,14 @@ export async function getApiKeyContext(config, apiKey) {
         return null;
     }
 
+    const apiKeyHashes = uniqueStrings([
+        hashApiKey(config, normalizedApiKey),
+        ...(config.legacyApiKeyPeppers || []).map(apiKeyPepper => hashApiKeyWithPepper(apiKeyPepper, normalizedApiKey))
+    ]);
+    if (!apiKeyHashes.length) {
+        return null;
+    }
+
     const db = await getDb(config);
     const row = await db.get(
         `
@@ -1428,11 +1608,11 @@ export async function getApiKeyContext(config, apiKey) {
                     WHERE a.user_id = u.id
                 ) AS is_admin
             FROM users u
-            WHERE u.api_key_hash = ?
+            WHERE u.api_key_hash IN (${apiKeyHashes.map(() => '?').join(', ')})
               AND u.status = 'active'
             LIMIT 1
         `,
-        [hashApiKey(config, normalizedApiKey)]
+        apiKeyHashes
     );
 
     if (!row) {
@@ -1440,6 +1620,36 @@ export async function getApiKeyContext(config, apiKey) {
     }
 
     return buildAuthContext(row, 'api_key');
+}
+
+export async function getTelegramAuthContext(config, telegramUserId) {
+    const normalizedTelegramId = normalizeTelegramId(telegramUserId);
+    if (!normalizedTelegramId) {
+        return null;
+    }
+
+    const db = await getDb(config);
+    const row = await db.get(
+        `
+            SELECT
+                u.*,
+                EXISTS(
+                    SELECT 1
+                    FROM admins a
+                    WHERE a.user_id = u.id
+                ) AS is_admin
+            FROM users u
+            WHERE u.telegram_id = ?
+            LIMIT 1
+        `,
+        [normalizedTelegramId]
+    );
+
+    if (!row || row.status !== 'active') {
+        return null;
+    }
+
+    return buildAuthContext(row, 'telegram');
 }
 
 export async function touchSession(config, sessionId) {
@@ -1556,8 +1766,6 @@ export async function ensureBootstrapAdmin(config) {
     }
 
     const normalizedUsername = normalizeUsername(config.bootstrapAdminUsername);
-    const normalizedTelegramId = normalizeTelegramId(config.bootstrapAdminTelegramId);
-    const passwordHash = await hashPassword(config.bootstrapAdminPassword);
     await withTransaction(config, async (db) => {
         const existingUser = await findUserRecordByUsername(db, normalizedUsername);
         const timestamp = nowIso();
@@ -1566,34 +1774,14 @@ export async function ensureBootstrapAdmin(config) {
         if (existingUser) {
             await assertUserIdentityAvailable(db, {
                 username: normalizedUsername,
-                telegramId: normalizedTelegramId,
                 excludeUserId: existingUser.id
             });
-
-            await db.run(
-                `
-                    UPDATE users
-                    SET display_name = ?,
-                        telegram_id = ?,
-                        password_hash = ?,
-                        status = 'active',
-                        updated_at = ?
-                    WHERE id = ?
-                `,
-                [
-                    cleanText(config.bootstrapAdminDisplayName),
-                    normalizedTelegramId,
-                    passwordHash,
-                    timestamp,
-                    existingUser.id
-                ]
-            );
         } else {
             await assertUserIdentityAvailable(db, {
-                username: normalizedUsername,
-                telegramId: normalizedTelegramId
+                username: normalizedUsername
             });
 
+            const passwordHash = await hashPassword(config.bootstrapAdminPassword);
             const result = await db.run(
                 `
                     INSERT INTO users (
@@ -1612,8 +1800,8 @@ export async function ensureBootstrapAdmin(config) {
                 `,
                 [
                     normalizedUsername,
-                    cleanText(config.bootstrapAdminDisplayName),
-                    normalizedTelegramId,
+                    'Bootstrap Admin',
+                    null,
                     passwordHash,
                     timestamp,
                     timestamp
@@ -1621,10 +1809,6 @@ export async function ensureBootstrapAdmin(config) {
             );
 
             userId = result.lastID;
-        }
-
-        if (config.bootstrapAdminApiKey) {
-            await assignApiKeyTx(db, config, userId, config.bootstrapAdminApiKey);
         }
 
         await db.run(

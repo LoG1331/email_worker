@@ -2,6 +2,7 @@ import express from 'express';
 import { z } from 'zod';
 import { asyncHandler } from '../utils/async-handler.mjs';
 import {
+    createRandomEmailRegister,
     createEmailRegister,
     deleteEmailRegister,
     listEmailRegisters
@@ -10,6 +11,10 @@ import { parsePagination } from '../utils/http.mjs';
 
 const createEmailRegisterSchema = z.object({
     emailAddress: z.string().min(1),
+    ownerUserId: z.union([z.number().int().positive(), z.string().min(1)]).optional()
+});
+const createRandomEmailRegisterQuerySchema = z.object({
+    domain: z.string().min(1).optional(),
     ownerUserId: z.union([z.number().int().positive(), z.string().min(1)]).optional()
 });
 
@@ -28,6 +33,17 @@ export function createEmailRegistersRouter(config) {
             total: result.total,
             count: result.registrations.length,
             registrations: result.registrations,
+            requestId: req.requestId
+        });
+    }));
+
+    router.get('/new-mail', asyncHandler(async (req, res) => {
+        const query = createRandomEmailRegisterQuerySchema.parse(req.query ?? {});
+        const registration = await createRandomEmailRegister(config, req.auth, query);
+        res.set('Cache-Control', 'no-store');
+        res.json({
+            success: true,
+            registration,
             requestId: req.requestId
         });
     }));

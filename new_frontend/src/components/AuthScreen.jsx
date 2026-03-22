@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowRight, LockKeyhole, ScanSearch, ShieldEllipsis } from 'lucide-react'
+import { ArrowRight, ScanSearch } from 'lucide-react'
 import { Button, Field, Input } from './ui.jsx'
 import { getApiBaseUrl } from '../lib/api.js'
 
@@ -23,56 +23,35 @@ export default function AuthScreen({ onLogin }) {
 
   return (
     <main className="app-shell flex min-h-screen items-center justify-center px-4 py-8 sm:px-6 lg:px-8">
-      <div className="grid w-full max-w-6xl gap-8 lg:grid-cols-[1.15fr_0.85fr]">
-        <section className="panel-strong order-2 rounded-[2.5rem] p-7 sm:p-8 lg:order-1 lg:p-10">
-          <div className="max-w-2xl space-y-8">
-            <div className="space-y-4">
-              <p className="text-[11px] font-black uppercase tracking-[0.28em] text-[var(--accent)]">Vận hành mail theo domain</p>
-              <h1 className="font-display text-4xl leading-[0.96] tracking-[-0.05em] text-[var(--ink)] sm:text-5xl lg:text-6xl">
-                Một bảng điều khiển gọn, nhanh và bám sát backend mới.
-              </h1>
-              <p className="max-w-xl text-base leading-7 text-[var(--muted)]">
-                Dành cho vận hành mail đa domain với phiên JWT, phân quyền theo domain hoặc hộp thư,
-                nhóm email theo `email_id`, và toàn bộ luồng quản trị nằm trong một web app tối giản.
-              </p>
+      <div className="grid w-full max-w-5xl gap-6 lg:grid-cols-[0.95fr_1.05fr]">
+        <section className="panel-strong order-2 overflow-hidden rounded-[2rem] p-6 sm:p-7 lg:order-1 lg:p-8">
+          <div className="max-w-xl space-y-4">
+            <div className="space-y-2.5">
+              <div className="inline-flex items-center gap-2 rounded-full border border-[rgba(19,93,102,0.12)] bg-white/72 px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.22em] text-[var(--accent)]">
+                <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />
+                Mail Console
+              </div>
+              <h1 className="font-display text-[2.6rem] leading-[0.92] tracking-[-0.06em] text-[var(--ink)] sm:text-[3rem] lg:text-[3.4rem]">Mail theo domain.</h1>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div className="muted-card rounded-[1.5rem] p-4">
-                <LockKeyhole className="h-5 w-5 text-[var(--accent)]" />
-                <p className="mt-4 text-sm font-bold text-[var(--ink)]">Phiên JWT</p>
-                <p className="mt-2 text-sm leading-6 text-[var(--muted)]">Đăng nhập bằng username/password, không phụ thuộc API key.</p>
+            <div className="rounded-[1.3rem] border border-[var(--line)] bg-white/65 p-4">
+              <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-[var(--muted)]">
+                <ScanSearch className="h-4 w-4 text-[var(--accent)]" />
+                <span>API</span>
               </div>
-              <div className="muted-card rounded-[1.5rem] p-4">
-                <ScanSearch className="h-5 w-5 text-[var(--warning)]" />
-                <p className="mt-4 text-sm font-bold text-[var(--ink)]">Hộp thư + nhóm mail</p>
-                <p className="mt-2 text-sm leading-6 text-[var(--muted)]">Làm việc trực tiếp với hộp thư, mail ID và feed nhóm đã đăng ký.</p>
-              </div>
-              <div className="muted-card rounded-[1.5rem] p-4">
-                <ShieldEllipsis className="h-5 w-5 text-[var(--success)]" />
-                <p className="mt-4 text-sm font-bold text-[var(--ink)]">RBAC rõ ràng</p>
-                <p className="mt-2 text-sm leading-6 text-[var(--muted)]">Phân biệt admin toàn cục, quyền theo domain và hộp thư đã đăng ký.</p>
-              </div>
-            </div>
-
-            <div className="rounded-[1.5rem] border border-[var(--line)] bg-white/65 p-5">
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-[var(--muted)]">Endpoint backend</p>
-              <p className="mt-2 font-mono text-sm text-[var(--ink)]">{getApiBaseUrl()}</p>
+              <p className="mt-2 font-mono text-[13px] text-[var(--ink)]">{getApiBaseUrl()}</p>
             </div>
           </div>
         </section>
 
-        <section className="panel panel-tone-ocean order-1 rounded-[2.5rem] p-7 sm:p-8 lg:order-2 lg:p-10">
-          <div className="space-y-6">
-            <div className="space-y-3">
-              <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[var(--accent)]">Đăng nhập</p>
-              <h2 className="font-display text-4xl tracking-[-0.04em] text-[var(--ink)]">Mail Console</h2>
-              <p className="text-sm leading-6 text-[var(--muted)]">
-                Frontend này chỉ dùng phiên web của backend mới. Phần API key được để cho dịch vụ khác sử dụng.
-              </p>
+        <section className="panel panel-tone-ocean order-1 overflow-hidden rounded-[2rem] p-6 sm:p-7 lg:order-2 lg:p-8">
+          <div className="space-y-5">
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[var(--accent)]">Đăng nhập</p>
+              <h2 className="font-display text-[2rem] tracking-[-0.05em] text-[var(--ink)] sm:text-[2.35rem]">Mail Console</h2>
             </div>
 
-            <form className="space-y-5" onSubmit={handleSubmit}>
+            <form className="space-y-4" onSubmit={handleSubmit}>
               <Field label="Tên đăng nhập">
                 <Input
                   autoFocus
@@ -94,7 +73,7 @@ export default function AuthScreen({ onLogin }) {
               </Field>
 
               <Button type="submit" size="lg" className="w-full justify-center" icon={ArrowRight} loading={submitting}>
-                Vào bảng điều khiển
+                Vào hệ thống
               </Button>
             </form>
           </div>

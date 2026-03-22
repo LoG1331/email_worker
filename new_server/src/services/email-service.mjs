@@ -1,5 +1,6 @@
-import { maybePruneStoredRawMime, getDb, withTransaction } from '../db/index.mjs';
+import { maybePruneStoredRawMime, getDb, vacuumDatabase, withTransaction } from '../db/index.mjs';
 import { hasGlobalPermission } from './account-service.mjs';
+import { enqueueInboundEmailNotification, processTelegramOutbox } from '../telegram/notifications.mjs';
 import { normalizeDomain, parseEmailAddress, parseEnvelopeAddress } from '../utils/email.mjs';
 import { HttpError } from '../utils/http.mjs';
 import { decodeCursor, encodeCursor } from '../utils/cursor.mjs';
@@ -37,6 +38,28 @@ function normalizeStartTime(value) {
     }
 
     return parsed.toISOString();
+}
+
+function normalizePruneOlderThanDays(value) {
+    const numericValue = Number.parseInt(String(value ?? ''), 10);
+    if (!Number.isInteger(numericValue) || numericValue < 0) {
+        throw new HttpError(400, 'olderThanDays must be a non-negative integer');
+    }
+
+    return numericValue;
+}
+
+function normalizePruneLimit(value, fallback = 5000) {
+    if (value === undefined || value === null || value === '') {
+        return fallback;
+    }
+
+    const numericValue = Number.parseInt(String(value), 10);
+    if (!Number.isInteger(numericValue) || numericValue <= 0) {
+        throw new HttpError(400, 'limit must be a positive integer');
+    }
+
+    return Math.min(50000, numericValue);
 }
 
 function parseEmailFeedCursor(cursor) {
@@ -202,6 +225,125 @@ function mapRowsById(rows, includeRawMime = false) {
 
 function buildInPlaceholders(values) {
     return values.map(() => '?').join(', ');
+}
+
+function uniqueNumericIds(values) {
+    return [...new Set(
+        values
+            .map(value => Number(value))
+            .filter(value => Number.isInteger(value) && value > 0)
+    )];
+}
+
+async function reindexGroupPositionsTx(db, groupIds) {
+    for (const groupId of uniqueNumericIds(groupIds)) {
+        const rows = await db.all(
+            `
+                SELECT id
+                FROM group_emails
+                WHERE group_id = ?
+                ORDER BY position ASC, id ASC
+            `,
+            [groupId]
+        );
+
+        let position = 0;
+        for (const row of rows) {
+            position += 1;
+            await db.run(
+                `
+                    UPDATE group_emails
+                    SET position = ?
+                    WHERE id = ?
+                `,
+                [position, row.id]
+            );
+        }
+    }
+}
+
+async function touchGroupsTx(db, groupIds) {
+    const normalizedGroupIds = uniqueNumericIds(groupIds);
+    if (!normalizedGroupIds.length) {
+        return;
+    }
+
+    await db.run(
+        `
+            UPDATE groups
+            SET updated_at = ?
+            WHERE id IN (${normalizedGroupIds.map(() => '?').join(', ')})
+        `,
+        [nowIso(), ...normalizedGroupIds]
+    );
+}
+
+async function getAffectedGroupIdsForEmailDeleteTx(db, conditionSql, values) {
+    const rows = await db.all(
+        `
+            SELECT DISTINCT ge.group_id
+            FROM group_emails ge
+            JOIN emails e ON e.id = ge.email_id
+            WHERE ${conditionSql}
+            ORDER BY ge.group_id ASC
+        `,
+        values
+    );
+
+    return rows.map(row => row.group_id);
+}
+
+function buildPruneEmailsScope(options = {}) {
+    const olderThanDays = normalizePruneOlderThanDays(options.olderThanDays);
+    const conditions = [`e.received_at < datetime('now', ?)`];
+    const values = [`-${olderThanDays} days`];
+    let normalizedDomain = '';
+
+    if (options.domain) {
+        normalizedDomain = normalizeDomain(options.domain);
+        if (!normalizedDomain) {
+            throw new HttpError(400, 'Valid domain is required');
+        }
+
+        conditions.push(`e.recipient_domain = ?`);
+        values.push(normalizedDomain);
+    }
+
+    return {
+        olderThanDays,
+        normalizedDomain: normalizedDomain || null,
+        conditions,
+        values
+    };
+}
+
+async function getPruneEmailAggregateTx(db, scope) {
+    return db.get(
+        `
+            SELECT
+                COUNT(*) AS total,
+                MIN(e.received_at) AS oldest_received_at,
+                MAX(e.received_at) AS newest_received_at
+            FROM emails e
+            WHERE ${scope.conditions.join(' AND ')}
+        `,
+        scope.values
+    );
+}
+
+async function getPruneEmailTargetIdsTx(db, scope, limit) {
+    const rows = await db.all(
+        `
+            SELECT e.id
+            FROM emails e
+            WHERE ${scope.conditions.join(' AND ')}
+            ORDER BY e.received_at ASC, e.id ASC
+            LIMIT ?
+        `,
+        [...scope.values, limit]
+    );
+
+    return rows.map(row => row.id);
 }
 
 function buildEmailVisibilitySql(userId, permission = 'view', { requireRegistration = true, emailAlias = 'e' } = {}) {
@@ -444,6 +586,18 @@ export async function ingestInboundEmail(config, payload) {
         console.error('Background prune failed:', error);
     });
 
+    void enqueueInboundEmailNotification(config, result.id)
+        .then(queueResult => {
+            if (queueResult?.queued) {
+                return processTelegramOutbox(config, { limit: 1 });
+            }
+
+            return null;
+        })
+        .catch(error => {
+            console.error('Telegram inbound notification failed:', error);
+        });
+
     return result;
 }
 
@@ -662,8 +816,12 @@ export async function getAuthorizedEmailsByIds(config, auth, emailIds, options =
 
 export async function deleteEmailById(config, id) {
     const emailId = parseEmailId(id);
-    const db = await getDb(config);
-    await db.run(`DELETE FROM emails WHERE id = ?`, [emailId]);
+    await withTransaction(config, async (db) => {
+        const affectedGroupIds = await getAffectedGroupIdsForEmailDeleteTx(db, 'e.id = ?', [emailId]);
+        await db.run(`DELETE FROM emails WHERE id = ?`, [emailId]);
+        await reindexGroupPositionsTx(db, affectedGroupIds);
+        await touchGroupsTx(db, affectedGroupIds);
+    });
     return { success: true };
 }
 
@@ -673,13 +831,106 @@ export async function deleteEmailsByRecipient(config, emailAddress) {
         throw new HttpError(400, 'Invalid email address');
     }
 
-    const db = await getDb(config);
-    await db.run(`DELETE FROM emails WHERE recipient_address = ?`, [parsedAddress.email]);
+    await withTransaction(config, async (db) => {
+        const affectedGroupIds = await getAffectedGroupIdsForEmailDeleteTx(db, 'e.recipient_address = ?', [parsedAddress.email]);
+        await db.run(`DELETE FROM emails WHERE recipient_address = ?`, [parsedAddress.email]);
+        await reindexGroupPositionsTx(db, affectedGroupIds);
+        await touchGroupsTx(db, affectedGroupIds);
+    });
     return { success: true };
 }
 
 export async function pruneStoredRawMime(config) {
     return maybePruneStoredRawMime(config, { force: true });
+}
+
+export async function pruneEmails(config, options = {}) {
+    const scope = buildPruneEmailsScope(options);
+    const limit = normalizePruneLimit(options.limit, 5000);
+    const dryRun = options.dryRun === true;
+    const db = await getDb(config);
+    const aggregate = await getPruneEmailAggregateTx(db, scope);
+    const totalMatched = Number(aggregate?.total || 0);
+
+    if (dryRun) {
+        const previewIds = await getPruneEmailTargetIdsTx(db, scope, limit);
+        const affectedGroupIds = previewIds.length
+            ? await getAffectedGroupIdsForEmailDeleteTx(
+                db,
+                `e.id IN (${buildInPlaceholders(previewIds)})`,
+                previewIds
+            )
+            : [];
+
+        return {
+            dryRun: true,
+            domain: scope.normalizedDomain,
+            olderThanDays: scope.olderThanDays,
+            limit,
+            matched: totalMatched,
+            selected: previewIds.length,
+            deleted: 0,
+            hasMore: totalMatched > previewIds.length,
+            affectedGroups: affectedGroupIds.length,
+            oldestReceivedAt: aggregate?.oldest_received_at || null,
+            newestReceivedAt: aggregate?.newest_received_at || null
+        };
+    }
+
+    const result = await withTransaction(config, async (transactionDb) => {
+        const targetIds = await getPruneEmailTargetIdsTx(transactionDb, scope, limit);
+        if (!targetIds.length) {
+            return {
+                dryRun: false,
+                domain: scope.normalizedDomain,
+                olderThanDays: scope.olderThanDays,
+                limit,
+                matched: totalMatched,
+                selected: 0,
+                deleted: 0,
+                hasMore: false,
+                affectedGroups: 0,
+                oldestReceivedAt: aggregate?.oldest_received_at || null,
+                newestReceivedAt: aggregate?.newest_received_at || null
+            };
+        }
+
+        const affectedGroupIds = await getAffectedGroupIdsForEmailDeleteTx(
+            transactionDb,
+            `e.id IN (${buildInPlaceholders(targetIds)})`,
+            targetIds
+        );
+
+        const result = await transactionDb.run(
+            `
+                DELETE FROM emails
+                WHERE id IN (${buildInPlaceholders(targetIds)})
+            `,
+            targetIds
+        );
+
+        await reindexGroupPositionsTx(transactionDb, affectedGroupIds);
+        await touchGroupsTx(transactionDb, affectedGroupIds);
+
+        const remainingCount = Math.max(0, totalMatched - targetIds.length);
+        return {
+            dryRun: false,
+            domain: scope.normalizedDomain,
+            olderThanDays: scope.olderThanDays,
+            limit,
+            matched: totalMatched,
+            selected: targetIds.length,
+            deleted: result.changes || 0,
+            hasMore: remainingCount > 0,
+            remaining: remainingCount,
+            affectedGroups: affectedGroupIds.length,
+            oldestReceivedAt: aggregate?.oldest_received_at || null,
+            newestReceivedAt: aggregate?.newest_received_at || null
+        };
+    });
+
+    result.vacuum = await vacuumDatabase(config);
+    return result;
 }
 
 export { assertRegisteredMailboxPermission };

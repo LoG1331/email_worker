@@ -27,7 +27,6 @@ function UserCreateModal({ open, form, saving, onChange, onSubmit, onClose }) {
       onClose={onClose}
       eyebrow="Người dùng"
       title="Tạo người dùng mới"
-      description="Tạo tài khoản web mới với tên đăng nhập, mật khẩu, tên hiển thị và Telegram ID nếu cần."
       tone="ocean"
       size="md"
     >
@@ -460,7 +459,6 @@ export default function UsersView({ token }) {
       <Panel
         eyebrow="Người dùng"
         title="Danh sách người dùng"
-        description="Danh sách người dùng là vùng làm việc chính. Chọn một dòng để mở hồ sơ chi tiết và chỉnh sửa trong modal."
         tone="slate"
         action={(
           <div className="flex flex-wrap items-center gap-2">

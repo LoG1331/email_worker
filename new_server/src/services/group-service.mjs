@@ -488,6 +488,29 @@ export async function listGroupEmails(config, auth, groupId, pagination = {}) {
                 [group.id, ...prunableIds]
             );
 
+            const remainingRows = await transactionDb.all(
+                `
+                    SELECT id
+                    FROM group_emails
+                    WHERE group_id = ?
+                    ORDER BY position ASC, id ASC
+                `,
+                [group.id]
+            );
+
+            let position = 0;
+            for (const row of remainingRows) {
+                position += 1;
+                await transactionDb.run(
+                    `
+                        UPDATE group_emails
+                        SET position = ?
+                        WHERE id = ?
+                    `,
+                    [position, row.id]
+                );
+            }
+
             await transactionDb.run(
                 `
                     UPDATE groups

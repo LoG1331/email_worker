@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "description": "Mail stack with new_workers + new_server + new_frontend",
   "scripts": {
+    "build": "npm run frontend:build",
     "dev": "./scripts/run-dev-stack.sh",
+    "env:init": "node scripts/generate-env-secrets.mjs",
+    "start": "./scripts/run-server-start.sh",
     "server:dev": "./scripts/run-server-dev.sh",
     "server:start": "./scripts/run-server-start.sh",
     "server:test": "node new_server/scripts/smoke-test.mjs",

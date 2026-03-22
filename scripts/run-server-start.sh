@@ -2,17 +2,20 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ENV_FILE="${ENV_FILE:-$ROOT_DIR/.env}"
+
+if [[ -f "$ENV_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
 
 export HOST="${HOST:-0.0.0.0}"
 export PORT="${PORT:-3001}"
 export NEW_SERVER_SQLITE_PATH="${NEW_SERVER_SQLITE_PATH:-$ROOT_DIR/data/new-server.sqlite}"
-export INBOUND_AUTH_TOKEN="${INBOUND_AUTH_TOKEN:-dev-inbound-token}"
-export AUTH_JWT_SECRET="${AUTH_JWT_SECRET:-dev-jwt-secret}"
-export API_KEY_PEPPER="${API_KEY_PEPPER:-dev-api-pepper}"
-export BOOTSTRAP_ADMIN_USERNAME="${BOOTSTRAP_ADMIN_USERNAME:-admin}"
-export BOOTSTRAP_ADMIN_PASSWORD="${BOOTSTRAP_ADMIN_PASSWORD:-admin-pass-123}"
-export BOOTSTRAP_ADMIN_DISPLAY_NAME="${BOOTSTRAP_ADMIN_DISPLAY_NAME:-Dev Admin}"
-export CORS_ALLOWED_ORIGINS="${CORS_ALLOWED_ORIGINS:-http://127.0.0.1:3002}"
+
+: "${INBOUND_AUTH_TOKEN:?INBOUND_AUTH_TOKEN must be set before running npm run start}"
 
 mkdir -p "$ROOT_DIR/data"
 

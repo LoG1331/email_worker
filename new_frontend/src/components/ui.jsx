@@ -57,10 +57,10 @@ export function Button({
 
 export function Field({ label, hint, className, children }) {
   return (
-    <label className={cn('flex flex-col gap-2', className)}>
+    <label className={cn('flex flex-col gap-1.5', className)}>
       <div className="flex items-center justify-between gap-3">
         <span className="text-sm font-semibold text-[var(--ink)]">{label}</span>
-        {hint ? <span className="text-xs text-[var(--muted)]">{hint}</span> : null}
+        {hint ? <span className="text-[11px] text-[var(--muted)]">{hint}</span> : null}
       </div>
       {children}
     </label>
@@ -106,13 +106,13 @@ export function Panel({
   children,
 }) {
   return (
-    <section className={cn('panel rounded-[1.75rem] p-5 sm:p-6', PANEL_TONE_CLASS[tone] || PANEL_TONE_CLASS.neutral, className)}>
+    <section className={cn('panel rounded-[1.45rem] p-4 sm:p-5', PANEL_TONE_CLASS[tone] || PANEL_TONE_CLASS.neutral, className)}>
       {(title || description || action || eyebrow) ? (
-        <header className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-2">
-            {eyebrow ? <p className="text-[11px] font-black uppercase tracking-[0.28em] text-[var(--accent)]">{eyebrow}</p> : null}
-            {title ? <h2 className="font-display text-[1.85rem] leading-[1.02] tracking-[-0.04em] text-[var(--ink)] sm:text-2xl">{title}</h2> : null}
-            {description ? <p className="max-w-2xl text-sm leading-6 text-[var(--muted)]">{description}</p> : null}
+        <header className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1.5">
+            {eyebrow ? <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[var(--accent)]">{eyebrow}</p> : null}
+            {title ? <h2 className="font-display text-[1.5rem] leading-[1] tracking-[-0.04em] text-[var(--ink)] sm:text-[1.7rem]">{title}</h2> : null}
+            {description ? <p className="max-w-2xl text-[13px] leading-5 text-[var(--muted)]">{description}</p> : null}
           </div>
           {action ? <div className="shrink-0 self-start">{action}</div> : null}
         </header>
@@ -125,13 +125,13 @@ export function Panel({
 export function SectionHeader({ eyebrow, title, description, action, tone = 'neutral' }) {
   return (
     <section className={cn('section-header-shell', SECTION_TONE_CLASS[tone] || SECTION_TONE_CLASS.neutral)}>
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div className="space-y-2.5">
-          {eyebrow ? <p className="text-[11px] font-black uppercase tracking-[0.28em] text-[var(--accent)]">{eyebrow}</p> : null}
-          <h1 className="font-display text-[2.15rem] leading-[0.95] tracking-[-0.05em] text-[var(--ink)] sm:text-[2.8rem]">{title}</h1>
-          {description ? <p className="max-w-3xl text-sm leading-6 text-[var(--muted)] sm:text-base">{description}</p> : null}
+      <div className="flex flex-col gap-3.5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="space-y-1.5">
+          {eyebrow ? <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[var(--accent)]">{eyebrow}</p> : null}
+          <h1 className="font-display text-[1.75rem] leading-[0.96] tracking-[-0.05em] text-[var(--ink)] sm:text-[2.2rem]">{title}</h1>
+          {description ? <p className="max-w-3xl text-[13px] leading-5 text-[var(--muted)] sm:text-sm">{description}</p> : null}
         </div>
-        {action ? <div className="flex flex-wrap items-center gap-3 lg:justify-end">{action}</div> : null}
+        {action ? <div className="flex flex-wrap items-center gap-2 lg:justify-end">{action}</div> : null}
       </div>
     </section>
   )
@@ -149,7 +149,7 @@ export function Badge({ tone = 'neutral', children, className }) {
   return <span className={cn('pill', toneClass, className)}>{children}</span>
 }
 
-export function AutoRefreshButton({ onClick, className, children = 'Tự làm mới 10s' }) {
+export function AutoRefreshButton({ onClick, className, children = 'Làm mới' }) {
   return (
     <button
       type="button"
@@ -291,18 +291,18 @@ export function MetricCard({ label, value, helper, icon: Icon, tone = 'accent' }
   }[tone]
 
   return (
-    <div className="muted-card rounded-[1.5rem] p-4 sm:p-5">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[var(--muted)]">{label}</p>
+    <div className="muted-card rounded-[1.3rem] p-3.5 sm:p-4">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--muted)]">{label}</p>
         {Icon ? (
-          <span className={cn('inline-flex h-10 w-10 items-center justify-center rounded-2xl', accentClass)}>
-            <Icon className="h-5 w-5" />
+          <span className={cn('inline-flex h-8 w-8 items-center justify-center rounded-[0.95rem]', accentClass)}>
+            <Icon className="h-4 w-4" />
           </span>
         ) : null}
       </div>
       <div className="space-y-1">
-        <p className="text-3xl font-black tracking-[-0.04em] text-[var(--ink)]">{value}</p>
-        {helper ? <p className="text-sm leading-6 text-[var(--muted)]">{helper}</p> : null}
+        <p className="text-[1.55rem] font-black tracking-[-0.04em] text-[var(--ink)]">{value}</p>
+        {helper ? <p className="text-[11px] leading-4 text-[var(--muted)]">{helper}</p> : null}
       </div>
     </div>
   )
@@ -310,10 +310,10 @@ export function MetricCard({ label, value, helper, icon: Icon, tone = 'accent' }
 
 export function EmptyState({ title, description, action }) {
   return (
-    <div className="panel rounded-[1.5rem] border-dashed px-6 py-10 text-center">
+    <div className="panel rounded-[1.35rem] border-dashed px-5 py-8 text-center">
       <div className="mx-auto flex max-w-md flex-col items-center gap-3">
-        <p className="font-display text-2xl text-[var(--ink)]">{title}</p>
-        <p className="text-sm leading-6 text-[var(--muted)]">{description}</p>
+        <p className="font-display text-[1.55rem] leading-none text-[var(--ink)]">{title}</p>
+        <p className="text-[13px] leading-5 text-[var(--muted)]">{description}</p>
         {action ? <div className="pt-2">{action}</div> : null}
       </div>
     </div>

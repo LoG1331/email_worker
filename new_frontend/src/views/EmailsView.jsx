@@ -3,6 +3,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import {
   createEmailRegister,
+  createRandomEmailRegister,
   deleteEmailById,
   deleteEmailRegister,
   getEmailById,
@@ -40,6 +41,7 @@ export default function EmailsView({ token }) {
     emailAddress: '',
   })
   const [registeringEmail, setRegisteringEmail] = useState(false)
+  const [generatingEmail, setGeneratingEmail] = useState(false)
   const [deletingRegistrationId, setDeletingRegistrationId] = useState(null)
   const [selectedEmailId, setSelectedEmailId] = useState(null)
   const [selectedEmail, setSelectedEmail] = useState(null)
@@ -217,6 +219,26 @@ export default function EmailsView({ token }) {
     }
   }
 
+  async function handleCreateRandomRegistration() {
+    setGeneratingEmail(true)
+
+    try {
+      const response = await createRandomEmailRegister(token)
+      setRegistrationFilters((current) => ({ ...current, offset: 0 }))
+      focusMailbox(response.registration.emailAddress)
+      toast.success(`Đã tạo hộp thư mới: ${response.registration.emailAddress}`)
+      await loadRegistrations({ showError: false })
+      await loadList({
+        showLoading: false,
+        showError: false,
+      })
+    } catch (error) {
+      toast.error(formatApiError(error))
+    } finally {
+      setGeneratingEmail(false)
+    }
+  }
+
   async function handleDeleteRegistration(registration) {
     setDeletingRegistrationId(registration.id)
 
@@ -309,9 +331,20 @@ export default function EmailsView({ token }) {
                     onChange={(event) => setRegistrationForm({ emailAddress: event.target.value })}
                     placeholder="alice@example.com"
                   />
-                  <Button className="w-full md:w-auto" type="submit" icon={Plus} loading={registeringEmail}>
-                    Đăng ký
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button className="w-full md:w-auto" type="submit" icon={Plus} loading={registeringEmail}>
+                      Đăng ký
+                    </Button>
+                    <Button
+                      className="w-full md:w-auto"
+                      type="button"
+                      variant="secondary"
+                      loading={generatingEmail}
+                      onClick={handleCreateRandomRegistration}
+                    >
+                      Lấy mail mới
+                    </Button>
+                  </div>
                 </div>
               </div>
 
@@ -410,7 +443,6 @@ export default function EmailsView({ token }) {
 
       <EmailFeedList
         title="Mail đã đăng ký"
-        description="Danh sách này chỉ hiển thị mail của các hộp thư bạn đã đăng ký. Bấm vào từng dòng để mở chi tiết."
         total={listing.count || listing.emails.length}
         emails={listing.emails}
         selectedEmailId={selectedEmailId}

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Globe2, Plus } from 'lucide-react'
+import { Globe2, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import {
   createDomain,
+  deleteDomain,
   getDomain,
   listDomains,
-  updateDomain,
 } from '../lib/api.js'
 import { cn, formatApiError, formatDateTime, truncate } from '../lib/format.js'
 import { clampOffset } from '../lib/pagination.js'
@@ -13,7 +13,6 @@ import { AutoRefreshButton, Badge, Button, Checkbox, CompactPagination, Field, I
 import { useAutoRefresh } from '../hooks/useAutoRefresh.js'
 
 const STATUS_OPTIONS = ['active', 'disabled']
-const COMPACT_INPUT_CLASS = 'min-h-[44px] rounded-[0.95rem] px-4 py-2.5 text-sm'
 
 function emptyDomainForm() {
   return {
@@ -31,8 +30,7 @@ function DomainCreateModal({ open, form, saving, onChange, onSubmit, onClose }) 
       open={open}
       onClose={onClose}
       eyebrow="Domain"
-      title="Tạo hoặc upsert domain"
-      description="Thêm domain mới, bật nhận thư và đánh dấu domain mặc định nếu cần."
+      title="Tạo domain mới"
       tone="sand"
       size="md"
     >
@@ -53,7 +51,7 @@ function DomainCreateModal({ open, form, saving, onChange, onSubmit, onClose }) 
           <Checkbox label="Domain mặc định" checked={form.isDefault} onChange={(event) => onChange((current) => ({ ...current, isDefault: event.target.checked }))} />
         </div>
         <div className="md:col-span-2 flex flex-wrap gap-3">
-          <Button type="submit" icon={Plus} loading={saving}>Lưu domain</Button>
+          <Button type="submit" icon={Plus} loading={saving}>Tạo domain</Button>
           <Button type="button" variant="ghost" onClick={onClose}>Đóng</Button>
         </div>
       </form>
@@ -65,11 +63,9 @@ function DomainDetailModal({
   open,
   domain,
   loading,
-  canEdit,
-  editForm,
-  savingDomain,
-  onChangeDomain,
-  onSubmitDomain,
+  canDelete,
+  deletingDomain,
+  onDeleteDomain,
   onClose,
 }) {
   return (
@@ -111,62 +107,34 @@ function DomainDetailModal({
             </div>
           </div>
 
-          {canEdit ? (
-            <form className="rounded-[1.45rem] border border-[var(--line)] bg-white/82 p-4 sm:p-5" onSubmit={onSubmitDomain}>
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-[var(--ink)]">Cấu hình</p>
-                <Badge tone="neutral">{domain.domain}</Badge>
-              </div>
+          <section className="rounded-[1.45rem] border border-[var(--line)] bg-white/82 p-4 sm:p-5">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-[var(--ink)]">Chi tiết cấu hình</p>
+              <Badge tone="neutral">{domain.domain}</Badge>
+            </div>
 
-              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
-                <Field label="Mô tả" className="md:row-span-2">
-                  <TextArea className={COMPACT_INPUT_CLASS} rows={4} value={editForm.description} onChange={(event) => onChangeDomain((current) => ({ ...current, description: event.target.value }))} />
-                </Field>
-                <Field label="Trạng thái">
-                  <Select className={COMPACT_INPUT_CLASS} value={editForm.status} onChange={(event) => onChangeDomain((current) => ({ ...current, status: event.target.value }))}>
-                    {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
-                  </Select>
-                </Field>
-                <div className="flex flex-wrap gap-4 rounded-[1rem] border border-[var(--line)] bg-white/76 px-4 py-3">
-                  <Checkbox label="Nhận thư" checked={editForm.inboundEnabled} onChange={(event) => onChangeDomain((current) => ({ ...current, inboundEnabled: event.target.checked }))} />
-                  <Checkbox label="Mặc định" checked={editForm.isDefault} onChange={(event) => onChangeDomain((current) => ({ ...current, isDefault: event.target.checked }))} />
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
+              <div className="rounded-[1rem] border border-[var(--line)] bg-white/76 px-4 py-3 md:row-span-2">
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[var(--muted)]">Mô tả</p>
+                <p className="mt-2 text-sm leading-6 text-[var(--ink)]">{domain.description || 'Không có mô tả'}</p>
+              </div>
+              <div className="rounded-[1rem] border border-[var(--line)] bg-white/76 px-4 py-3">
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[var(--muted)]">Trạng thái</p>
+                <div className="mt-2">
+                  <Badge tone={domain.status === 'active' ? 'success' : 'warning'}>{domain.status}</Badge>
                 </div>
               </div>
+              <div className="flex flex-wrap gap-2 rounded-[1rem] border border-[var(--line)] bg-white/76 px-4 py-3">
+                <Badge tone={domain.inboundEnabled ? 'accent' : 'warning'}>{domain.inboundEnabled ? 'Nhận thư bật' : 'Nhận thư tắt'}</Badge>
+                {domain.isDefault ? <Badge tone="accent">Domain mặc định</Badge> : <Badge tone="neutral">Không mặc định</Badge>}
+              </div>
+            </div>
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Button type="submit" size="sm" loading={savingDomain}>Lưu</Button>
-                <Button type="button" size="sm" variant="ghost" onClick={onClose}>Đóng</Button>
-              </div>
-            </form>
-          ) : (
-            <section className="rounded-[1.45rem] border border-[var(--line)] bg-white/82 p-4 sm:p-5">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-[var(--ink)]">Chi tiết cấu hình</p>
-                <Badge tone="neutral">{domain.domain}</Badge>
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
-                <div className="rounded-[1rem] border border-[var(--line)] bg-white/76 px-4 py-3 md:row-span-2">
-                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[var(--muted)]">Mô tả</p>
-                  <p className="mt-2 text-sm leading-6 text-[var(--ink)]">{domain.description || 'Không có mô tả'}</p>
-                </div>
-                <div className="rounded-[1rem] border border-[var(--line)] bg-white/76 px-4 py-3">
-                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[var(--muted)]">Trạng thái</p>
-                  <div className="mt-2">
-                    <Badge tone={domain.status === 'active' ? 'success' : 'warning'}>{domain.status}</Badge>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2 rounded-[1rem] border border-[var(--line)] bg-white/76 px-4 py-3">
-                  <Badge tone={domain.inboundEnabled ? 'accent' : 'warning'}>{domain.inboundEnabled ? 'Nhận thư bật' : 'Nhận thư tắt'}</Badge>
-                  {domain.isDefault ? <Badge tone="accent">Domain mặc định</Badge> : <Badge tone="neutral">Không mặc định</Badge>}
-                </div>
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Button type="button" size="sm" variant="ghost" onClick={onClose}>Đóng</Button>
-              </div>
-            </section>
-          )}
+            <div className="mt-4 flex flex-wrap gap-2">
+              {canDelete ? <Button type="button" size="sm" variant="danger" icon={Trash2} loading={deletingDomain} onClick={onDeleteDomain}>Xóa domain</Button> : null}
+              <Button type="button" size="sm" variant="ghost" onClick={onClose}>Đóng</Button>
+            </div>
+          </section>
         </div>
       ) : (
         <div className="rounded-[1.5rem] border border-dashed border-[var(--line)] bg-white/55 px-5 py-10 text-sm text-[var(--muted)]">
@@ -186,14 +154,8 @@ export default function DomainsView({ token, account, accessibleDomains }) {
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [creatingDomain, setCreatingDomain] = useState(false)
-  const [savingDomain, setSavingDomain] = useState(false)
+  const [deletingDomain, setDeletingDomain] = useState(false)
   const [createForm, setCreateForm] = useState(emptyDomainForm())
-  const [editForm, setEditForm] = useState({
-    description: '',
-    status: 'active',
-    inboundEnabled: true,
-    isDefault: false,
-  })
   const [filters, setFilters] = useState({
     limit: 50,
     offset: 0,
@@ -254,13 +216,6 @@ export default function DomainsView({ token, account, accessibleDomains }) {
     try {
       const domainResponse = await getDomain(token, domainName)
       setSelectedDomain(domainResponse.domain)
-      setEditForm({
-        description: domainResponse.domain.description,
-        status: domainResponse.domain.status,
-        inboundEnabled: domainResponse.domain.inboundEnabled,
-        isDefault: domainResponse.domain.isDefault,
-      })
-
       return domainResponse
     } catch (error) {
       if (showError) {
@@ -307,7 +262,7 @@ export default function DomainsView({ token, account, accessibleDomains }) {
 
     try {
       const response = await createDomain(token, createForm)
-      toast.success('Đã lưu domain')
+      toast.success('Đã tạo domain')
       setCreateForm(emptyDomainForm())
       setCreateModalOpen(false)
       setSelectedDomainName(response.domain.domain)
@@ -325,24 +280,23 @@ export default function DomainsView({ token, account, accessibleDomains }) {
     }
   }
 
-  async function handleUpdateDomain(event) {
-    event.preventDefault()
-
+  async function handleDeleteDomain() {
     if (!selectedDomainName) {
       return
     }
 
-    setSavingDomain(true)
+    setDeletingDomain(true)
 
     try {
-      await updateDomain(token, selectedDomainName, editForm)
-      toast.success('Đã cập nhật domain')
-      await loadDomains(selectedDomainName, filters, { showLoading: false, showError: false })
-      await loadDomainDetail(selectedDomainName, { showLoading: false, showError: false })
+      await deleteDomain(token, selectedDomainName)
+      toast.success('Đã xóa domain')
+      setSelectedDomainName(null)
+      setSelectedDomain(null)
+      await loadDomains(null, filters, { showLoading: false, showError: false })
     } catch (error) {
       toast.error(formatApiError(error))
     } finally {
-      setSavingDomain(false)
+      setDeletingDomain(false)
     }
   }
 
@@ -363,7 +317,6 @@ export default function DomainsView({ token, account, accessibleDomains }) {
       <Panel
         eyebrow="Domain"
         title="Danh sách domain"
-        description="Danh sách domain là phần nhìn chính. Chọn domain để mở detail, xem số email và số quyền đã cấp."
         tone="slate"
         action={(
           <div className="flex flex-wrap items-center gap-2">
@@ -465,11 +418,9 @@ export default function DomainsView({ token, account, accessibleDomains }) {
         open={Boolean(selectedDomainName)}
         domain={selectedDomain}
         loading={loadingDetail}
-        canEdit={account.isAdmin}
-        editForm={editForm}
-        savingDomain={savingDomain}
-        onChangeDomain={setEditForm}
-        onSubmitDomain={handleUpdateDomain}
+        canDelete={account.isAdmin}
+        deletingDomain={deletingDomain}
+        onDeleteDomain={handleDeleteDomain}
         onClose={() => {
           setSelectedDomainName(null)
           setSelectedDomain(null)

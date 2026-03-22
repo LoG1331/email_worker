@@ -19,7 +19,11 @@ for (const requiredPath of [
     '/v1/auth/me',
     '/v1/domains',
     '/v1/groups/{groupId}/emails',
-    '/v1/inbound/email'
+    '/v1/inbound/email',
+    '/v1/maintenance/storage',
+    '/v1/system/telegram',
+    '/v1/system/telegram/commands/register',
+    '/v1/telegram/webhook'
 ]) {
     assert.ok(document.paths?.[requiredPath], `Missing OpenAPI path: ${requiredPath}`);
 }

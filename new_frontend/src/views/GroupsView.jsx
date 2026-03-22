@@ -195,6 +195,9 @@ function GroupDetailModal({
   open,
   group,
   registrations,
+  registrationTotal,
+  registrationOffset,
+  registrationLimit,
   loadingRegistrations,
   loadingDetail,
   includeRawMime,
@@ -212,6 +215,9 @@ function GroupDetailModal({
   onSubmitAppend,
   onToggleRawMime,
   onRemoveEmail,
+  onPrevRegistrations,
+  onNextRegistrations,
+  onChangeRegistrationLimit,
   onPrevEmails,
   onNextEmails,
   onClose,
@@ -224,7 +230,6 @@ function GroupDetailModal({
       title={group ? group.name : 'Chi tiết nhóm'}
       tone="slate"
       size="xl"
-      description={group ? 'Quản lý cấu hình nhóm, hộp thư nguồn và feed email trong cùng một modal gọn.' : undefined}
     >
       {group ? (
         <div className="space-y-4">
@@ -308,6 +313,16 @@ function GroupDetailModal({
                 <div className="flex items-center gap-2">
                   {loadingRegistrations ? <Badge tone="warning">Đang tải…</Badge> : null}
                   <Badge tone="accent">{registrations.length}</Badge>
+                  <CompactPagination
+                    total={registrationTotal}
+                    count={registrations.length}
+                    offset={registrationOffset}
+                    limit={registrationLimit}
+                    onLimitChange={onChangeRegistrationLimit}
+                    onPrev={onPrevRegistrations}
+                    onNext={onNextRegistrations}
+                    limitOptions={[25, 50, 100, 200]}
+                  />
                 </div>
               </div>
 
@@ -401,6 +416,7 @@ export default function GroupsView({ token }) {
   const [groupEmails, setGroupEmails] = useState([])
   const [groupEmailState, setGroupEmailState] = useState({ count: 0, hasMore: false })
   const [registrations, setRegistrations] = useState([])
+  const [totalRegistrations, setTotalRegistrations] = useState(0)
   const [loadingRegistrations, setLoadingRegistrations] = useState(false)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [includeRawMime, setIncludeRawMime] = useState(false)
@@ -420,20 +436,28 @@ export default function GroupsView({ token }) {
     limit: 50,
     offset: 0,
   })
+  const [registrationFilters, setRegistrationFilters] = useState({
+    limit: 50,
+    offset: 0,
+  })
   const groupEmailLimit = 50
   const groupEmailPager = useCursorPager()
 
-  async function loadRegistrations({ showLoading = true, showError = true } = {}) {
+  async function loadRegistrations(query = registrationFilters, { showLoading = true, showError = true } = {}) {
     if (showLoading) {
       setLoadingRegistrations(true)
     }
 
     try {
-      const response = await listEmailRegisters(token, {
-        limit: 200,
-        offset: 0,
-      })
+      const response = await listEmailRegisters(token, query)
+      if (!response.registrations.length && query.offset > 0 && response.total <= query.offset) {
+        setRegistrationFilters((current) => ({
+          ...current,
+          offset: clampOffset(current.offset, response.total, current.limit),
+        }))
+      }
       setRegistrations(response.registrations)
+      setTotalRegistrations(response.total)
       return response
     } catch (error) {
       if (showError) {
@@ -468,6 +492,7 @@ export default function GroupsView({ token }) {
         setGroupEmails([])
         setGroupEmailState({ count: 0, hasMore: false })
         setRegistrations([])
+        setTotalRegistrations(0)
         return
       }
 
@@ -479,6 +504,7 @@ export default function GroupsView({ token }) {
         setGroupEmails([])
         setGroupEmailState({ count: 0, hasMore: false })
         setRegistrations([])
+        setTotalRegistrations(0)
       }
     } catch (error) {
       if (showError) {
@@ -520,7 +546,7 @@ export default function GroupsView({ token }) {
 
           throw error
         }),
-        loadRegistrations({
+        loadRegistrations(registrationFilters, {
           showLoading,
           showError,
         }),
@@ -560,12 +586,13 @@ export default function GroupsView({ token }) {
       setGroupEmails([])
       setGroupEmailState({ count: 0, hasMore: false })
       setRegistrations([])
+      setTotalRegistrations(0)
       return
     }
 
     void loadGroupDetail(selectedGroupId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupEmailLimit, groupEmailPager.cursor, includeRawMime, selectedGroupId, token])
+  }, [groupEmailLimit, groupEmailPager.cursor, includeRawMime, registrationFilters.limit, registrationFilters.offset, selectedGroupId, token])
 
   const refreshNow = useAutoRefresh(async () => {
     await loadGroups(selectedGroupId, groupListFilters, {
@@ -711,7 +738,6 @@ export default function GroupsView({ token }) {
       <Panel
         eyebrow="Nhóm"
         title="Danh sách nhóm"
-        description="Mỗi dòng là một feed riêng của người sở hữu. Chọn nhóm để mở modal quản lý hộp thư nguồn và email feed."
         tone="ocean"
         action={(
           <div className="flex flex-wrap items-center gap-2">
@@ -769,6 +795,9 @@ export default function GroupsView({ token }) {
         open={Boolean(selectedGroupId)}
         group={selectedGroup}
         registrations={registrations}
+        registrationTotal={totalRegistrations}
+        registrationOffset={registrationFilters.offset}
+        registrationLimit={registrationFilters.limit}
         loadingRegistrations={loadingRegistrations}
         loadingDetail={loadingDetail}
         includeRawMime={includeRawMime}
@@ -786,6 +815,9 @@ export default function GroupsView({ token }) {
         onSubmitAppend={handleAppend}
         onToggleRawMime={setIncludeRawMime}
         onRemoveEmail={handleRemoveEmail}
+        onPrevRegistrations={() => setRegistrationFilters((current) => ({ ...current, offset: Math.max(0, current.offset - current.limit) }))}
+        onNextRegistrations={() => setRegistrationFilters((current) => ({ ...current, offset: current.offset + current.limit }))}
+        onChangeRegistrationLimit={(limit) => setRegistrationFilters((current) => ({ ...current, limit, offset: 0 }))}
         onPrevEmails={groupEmailPager.goPrev}
         onNextEmails={groupEmailPager.goNext}
         onClose={() => {
@@ -794,6 +826,7 @@ export default function GroupsView({ token }) {
           setGroupEmails([])
           setGroupEmailState({ count: 0, hasMore: false })
           setRegistrations([])
+          setTotalRegistrations(0)
           groupEmailPager.reset()
         }}
       />

@@ -23,7 +23,7 @@ Tài liệu này dành cho frontend mới. Nguồn chuẩn máy đọc vẫn là
 
 ## Quy tắc quyền
 
-- Admin có full quyền trên mọi domain, user, group, email
+- Admin có full quyền trên mọi domain, user và email; group vẫn owner-scoped
 - User thường chỉ thấy domain đã được cấp trong `permissions`
 - User thường chỉ đọc được mail thuộc mailbox mà chính user đã đăng ký trong `email_registers`
 - Hai user không thể cùng đăng ký một `emailAddress`
@@ -166,6 +166,10 @@ Cho phép đổi:
 - `telegramId`
 - `status`
 
+Guard:
+
+- không thể disable `active admin` cuối cùng
+
 ### `POST /v1/users/:userId/api-key/rotate`
 
 Admin rotate API key cho user bất kỳ.
@@ -208,7 +212,7 @@ hoặc
 
 ### `DELETE /v1/admins/:userId`
 
-Gỡ quyền admin. Không thể gỡ admin cuối cùng.
+Gỡ quyền admin. Không thể gỡ `active admin` cuối cùng.
 
 ## Permissions
 
@@ -268,24 +272,20 @@ Body:
 ```
 
 Hoặc target theo `username`. Nếu dùng `username` chưa tồn tại thì backend có thể auto-create user shell.
+Route này chỉ tạo mới. Nếu permission đã tồn tại thì trả `409`.
 
 ### `GET /v1/permissions/:permissionId`
 
 Lấy chi tiết một permission.
 
-### `PATCH /v1/permissions/:permissionId`
-
-Chỉ update:
-
-```json
-{
-  "status": "disabled"
-}
-```
-
 ### `DELETE /v1/permissions/:permissionId`
 
 Xóa permission.
+Nếu user mục tiêu không phải admin toàn cục thì backend sẽ cleanup luôn:
+
+- `email_registers` của user trên domain đó
+- link email trong `groups` của user trên domain đó
+- pending/failed `telegram_outbox` của user cho domain đó
 
 ## Domains
 
@@ -329,13 +329,16 @@ Body:
 }
 ```
 
+Route này chỉ tạo mới. Nếu domain đã tồn tại thì trả `409`.
+
 ### `GET /v1/domains/:domain`
 
 User phải có quyền trên domain đó hoặc là admin.
 
-### `PATCH /v1/domains/:domain`
+### `DELETE /v1/domains/:domain`
 
 Admin only.
+Xóa domain và cascade cleanup toàn bộ `permissions`, `emails`, `email_registers` và liên kết email trong group thuộc domain đó.
 
 ## Email Registers
 
@@ -354,6 +357,28 @@ Response:
 - `count`
 - `registrations[]`
 
+### `GET /v1/email-registers/new-mail`
+
+Tạo một mailbox ngẫu nhiên rồi register luôn cho owner hiện tại.
+
+Auth:
+
+- dùng được với session token
+- dùng được với API key (`X-Api-Key` hoặc `Authorization: ApiKey ...`)
+
+Query tùy chọn:
+
+- `domain`: ép tạo mailbox trên một domain cụ thể
+- `ownerUserId`: admin có thể tạo cho user khác
+
+Rules:
+
+- backend chỉ chọn domain `active`
+- user thường chỉ được gen trên domain mà caller đang có `permission` `active`
+- admin được gen trên toàn bộ domain `active`
+- nếu không truyền `domain`, backend ưu tiên domain mặc định hoặc domain đầu tiên trong tập domain mà caller được dùng
+- mailbox sinh ra theo pattern giống địa chỉ thật và được retry tới khi tìm được địa chỉ chưa từng xuất hiện trong `email_registers` lẫn `emails`
+
 ### `POST /v1/email-registers`
 
 Body:
@@ -363,6 +388,8 @@ Body:
   "emailAddress": "alice@example.com"
 }
 ```
+
+Mailbox chỉ được đăng ký nếu domain đã tồn tại trong bảng `domains`.
 
 Admin có thể thêm:
 
@@ -381,7 +408,7 @@ Rules:
 
 ### `DELETE /v1/email-registers/:registrationId`
 
-Xóa đăng ký mailbox. Nếu group của owner đang chứa mail từ mailbox đó thì backend tự gỡ các mail liên quan khỏi group.
+Xóa đăng ký mailbox. Nếu group của owner đang chứa mail từ mailbox đó thì backend tự gỡ các mail liên quan khỏi group. Pending/failed `telegram_outbox` của mailbox đó cũng bị dọn.
 
 ## Emails
 
@@ -550,8 +577,107 @@ Frontend không dùng route này.
 
 ## Maintenance
 
+### `GET /v1/maintenance/storage`
+
+Admin only.
+
+Trả về dung lượng hiện tại của:
+
+- file SQLite chính
+- file `-wal`
+- file `-shm`
+- tổng dung lượng thư mục chứa SQLite
+
 ### `POST /v1/maintenance/prune-raw-mime`
 
 Admin only.
 
 Dùng ở tab overview để cleanup raw MIME đã quá hạn retention.
+
+### `POST /v1/maintenance/prune-emails`
+
+Admin only.
+
+Xóa mail cũ toàn hệ thống theo lô để dọn SQLite lớn.
+
+Body:
+
+```json
+{
+  "olderThanDays": 30,
+  "domain": "example.com",
+  "dryRun": true,
+  "limit": 5000
+}
+```
+
+Rules:
+
+- `olderThanDays` là bắt buộc
+- `domain` là tùy chọn để chỉ dọn một domain
+- `dryRun=true` chỉ thống kê, chưa xóa
+- `limit` giới hạn số mail bị xóa trong một lần chạy
+- backend sẽ reindex lại `group_emails` và cập nhật `groups.updated_at` cho group bị ảnh hưởng
+- nếu `dryRun=false`, backend sẽ tự `VACUUM` SQLite ngay sau khi xóa xong
+
+## System
+
+### `GET /v1/system/telegram`
+
+Super admin only.
+
+Trả về:
+
+- `settings`: public Telegram settings, không lộ bot token thô
+- `runtime`: trạng thái runtime hiện tại, gồm webhook, outbox và lỗi gần nhất
+
+### `PATCH /v1/system/telegram`
+
+Super admin only.
+
+Body hỗ trợ:
+
+```json
+{
+  "enabled": true,
+  "publicBaseUrl": "https://example.com",
+  "botToken": "123456:bot-token",
+  "clearBotToken": false
+}
+```
+
+Behavior:
+
+- lưu cấu hình bot vào `system_settings`
+- tự generate webhook secret nếu chưa có
+- reload Telegram runtime ngay sau khi lưu
+- nếu reload fail thì backend rollback lại config Telegram trước đó và cố gắng khởi động lại runtime cũ
+- nếu reload runtime fail thì trả `502` kèm `settings` và `runtime` hiện tại
+
+### `POST /v1/system/telegram/commands/register`
+
+Super admin only.
+
+Đăng ký lại danh sách command của bot với Telegram API.
+
+Trả về:
+
+- `count`
+- `commands[]`
+- `runtime`
+
+## Telegram
+
+### `POST /v1/telegram/webhook`
+
+Webhook route cho Telegram Bot.
+
+- Không dùng JWT session
+- Phải gửi header `X-Telegram-Bot-Api-Secret-Token`
+- Secret phải khớp `webhookSecret` đang lưu trong system settings
+- Body là update JSON từ Telegram
+
+Response chính:
+
+- `success`
+- `handled`

@@ -6,12 +6,16 @@ import { cn } from '../lib/format.js'
 export default function AppShell({
   account,
   activeView,
+  accessibleDomains,
   navItems,
   onNavigate,
   onLogout,
   children,
 }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const activeItem = navItems.find((item) => item.id === activeView)
+  const permissionCount = account.permissions?.length || 0
+  const accessibleDomainCount = accessibleDomains.length
 
   useEffect(() => {
     if (!mobileNavOpen) {
@@ -35,25 +39,23 @@ export default function AppShell({
     <div className="app-shell">
       <div className="lg:hidden">
         <div className="sticky top-0 z-30 px-3 pt-3 sm:px-5">
-          <div className="panel-strong flex items-center justify-between gap-3 rounded-[1.5rem] px-4 py-3">
-            <button
-              type="button"
-              onClick={() => setMobileNavOpen(true)}
-              className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[1rem] border border-[var(--line)] bg-white/82 text-[var(--ink)] transition hover:bg-white"
-              aria-label="Mở menu điều hướng"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
+          <div className="panel-strong rounded-[1.1rem] px-3 py-2">
+            <div className="relative flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setMobileNavOpen(true)}
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[0.95rem] border border-[var(--line)] bg-white/82 text-[var(--ink)] transition hover:bg-white"
+                aria-label="Mở menu điều hướng"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
 
-            <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[var(--accent)]">Mail Console</p>
-              <div className="mt-1 flex min-w-0 items-center gap-2">
-                <p className="truncate font-display text-[1.55rem] leading-none tracking-[-0.04em] text-[var(--ink)]">
-                  {navItems.find((item) => item.id === activeView)?.label || 'Tổng quan'}
-                </p>
-                {account.isAdmin ? <Badge tone="accent"><ShieldCheck className="h-3.5 w-3.5" />Admin</Badge> : null}
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <p className="truncate text-sm font-semibold text-[var(--ink)]">{activeItem?.label || 'Tổng quan'}</p>
+                  {account.isAdmin ? <Badge tone="accent"><ShieldCheck className="h-3.5 w-3.5" />Admin</Badge> : null}
+                </div>
               </div>
-              <p className="mt-1 truncate text-xs text-[var(--muted)]">{account.displayName || account.username}</p>
             </div>
           </div>
         </div>
@@ -74,12 +76,7 @@ export default function AppShell({
         >
           <div className="flex h-full flex-col gap-5">
             <div className="flex items-start justify-between gap-3">
-              <div>
-                <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[var(--accent)]">Mail Console</p>
-                  <p className="font-display text-[1.7rem] leading-none tracking-[-0.04em] text-[var(--ink)]">Điều phối mail</p>
-                </div>
-              </div>
+              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[var(--accent)]">Mail Console</p>
 
               <button
                 type="button"
@@ -91,13 +88,17 @@ export default function AppShell({
               </button>
             </div>
 
-            <div className="rounded-[1.35rem] border border-[var(--line)] bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(236,247,244,0.86))] p-4">
+            <div className="rounded-[1.15rem] border border-[var(--line)] bg-white/78 p-3 shadow-[0_20px_34px_-28px_rgba(12,46,50,0.34)]">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-[var(--ink)]">{account.displayName || account.username}</p>
-                  <p className="truncate text-xs text-[var(--muted)]">@{account.username}</p>
+                  <p className="truncate text-sm font-semibold text-[var(--ink)]">{account.displayName || account.username}</p>
+                  <p className="truncate text-[11px] text-[var(--muted)]">@{account.username}</p>
                 </div>
                 {account.isAdmin ? <Badge tone="accent"><ShieldCheck className="h-3.5 w-3.5" />Admin</Badge> : null}
+              </div>
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                <Badge tone="neutral">{accessibleDomainCount} domain</Badge>
+                <Badge tone="neutral">{permissionCount} quyền</Badge>
               </div>
             </div>
 
@@ -133,30 +134,25 @@ export default function AppShell({
         </aside>
       </div>
 
-      <div className="mx-auto flex min-h-screen w-full max-w-[1680px] flex-col gap-5 px-3 py-3 sm:px-5 lg:flex-row lg:gap-6 lg:px-8 lg:py-8">
-        <aside className="panel-strong hidden rounded-[2rem] p-4 lg:sticky lg:top-8 lg:flex lg:h-[calc(100vh-4rem)] lg:w-[290px] lg:p-5">
-          <div className="flex h-full flex-col gap-6">
-            <div className="space-y-4">
-              <div>
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.22em] text-[var(--accent)]">Mail Console</p>
-                  <p className="font-display text-2xl tracking-[-0.03em] text-[var(--ink)]">Điều phối mail</p>
+      <div className="mx-auto flex min-h-screen w-full max-w-[1680px] flex-col gap-4 px-3 py-3 sm:px-5 lg:flex-row lg:gap-4 lg:px-6 lg:py-6">
+        <aside className="panel-strong relative hidden overflow-hidden rounded-[1.45rem] p-2.5 lg:sticky lg:top-6 lg:flex lg:h-[calc(100vh-3rem)] lg:w-[198px]">
+          <div className="relative flex h-full flex-col gap-2">
+            <section className="rounded-[1rem] border border-[var(--line)] bg-white/82 p-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--accent)]">Mail Console</p>
+              <div className="mt-2 flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-[var(--ink)]">{account.displayName || account.username}</p>
+                  <p className="truncate text-[11px] text-[var(--muted)]">@{account.username}</p>
                 </div>
+                {account.isAdmin ? <Badge tone="accent"><ShieldCheck className="h-3 w-3" />Admin</Badge> : null}
               </div>
-
-              <div className="rounded-[1.5rem] border border-[var(--line)] bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(236,247,244,0.86))] p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-bold text-[var(--ink)]">{account.displayName || account.username}</p>
-                    <p className="text-xs text-[var(--muted)]">@{account.username}</p>
-                  </div>
-                  {account.isAdmin ? <Badge tone="accent"><ShieldCheck className="h-3.5 w-3.5" />Admin</Badge> : null}
-                </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <Badge tone="neutral">{accessibleDomainCount} domain</Badge>
+                <Badge tone="neutral">{permissionCount} quyền</Badge>
               </div>
+            </section>
 
-            </div>
-
-            <nav className="min-h-0 flex-1 flex-col gap-2 overflow-auto">
+            <nav className="min-h-0 flex flex-1 flex-col gap-2 overflow-auto">
               {navItems.map((item) => {
                 const isActive = item.id === activeView
 
@@ -165,29 +161,29 @@ export default function AppShell({
                     key={item.id}
                     onClick={() => onNavigate(item.id)}
                     className={cn(
-                      'flex items-center justify-between gap-3 rounded-[1.25rem] px-4 py-3 text-left transition-colors',
+                      'flex items-center justify-between gap-2 rounded-[0.95rem] border px-2.5 py-2 text-left transition-all',
                       isActive
-                        ? 'bg-[rgba(19,93,102,0.12)] text-[var(--accent-strong)]'
-                        : 'text-[var(--muted)] hover:bg-white/65 hover:text-[var(--ink)]',
+                        ? 'border-[rgba(19,93,102,0.12)] bg-[linear-gradient(135deg,rgba(19,93,102,0.14),rgba(19,93,102,0.06))] text-[var(--accent-strong)] shadow-[0_18px_28px_-24px_rgba(19,93,102,0.58)]'
+                        : 'border-transparent text-[var(--muted)] hover:border-[var(--line)] hover:bg-white/70 hover:text-[var(--ink)]',
                     )}
-                  >
-                    <span className="flex items-center gap-3">
-                      <item.icon className="h-4 w-4" />
-                      <span className="text-sm font-semibold">{item.label}</span>
-                    </span>
-                    {item.badge ? <Badge tone={isActive ? 'accent' : 'neutral'}>{item.badge}</Badge> : null}
-                  </button>
+                    >
+                      <span className="flex items-center gap-2">
+                        <item.icon className="h-3.5 w-3.5" />
+                        <span className="text-[12px] font-semibold">{item.label}</span>
+                      </span>
+                      {item.badge ? <Badge tone={isActive ? 'accent' : 'neutral'}>{item.badge}</Badge> : null}
+                    </button>
                 )
               })}
             </nav>
 
-            <Button variant="ghost" className="hidden justify-start rounded-[1.25rem] lg:inline-flex" icon={LogOut} onClick={onLogout}>
+            <Button variant="ghost" size="sm" className="hidden justify-start rounded-[0.95rem] lg:inline-flex" icon={LogOut} onClick={onLogout}>
               Đăng xuất
             </Button>
           </div>
         </aside>
 
-        <div className="min-w-0 flex-1 space-y-5 pt-1 pb-6 lg:pt-0 lg:pb-0">
+        <div className="min-w-0 flex-1 space-y-3.5 pt-1 pb-6 lg:pt-0 lg:pb-0">
           {children}
         </div>
       </div>

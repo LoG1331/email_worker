@@ -2,6 +2,8 @@ import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import fs from 'node:fs';
+import path from 'node:path';
 import { requestContext } from './middleware/request-context.mjs';
 import { createBearerAuth, createUserAuth } from './middleware/auth.mjs';
 import { createAdminsRouter } from './routes/admins.routes.mjs';
@@ -16,6 +18,8 @@ import { createGroupsRouter } from './routes/groups.routes.mjs';
 import { createHealthRouter } from './routes/health.routes.mjs';
 import { createInboundRouter } from './routes/inbound.routes.mjs';
 import { createMaintenanceRouter } from './routes/maintenance.routes.mjs';
+import { createSystemRouter } from './routes/system.routes.mjs';
+import { createTelegramRouter } from './routes/telegram.routes.mjs';
 
 function createCorsMiddleware(config) {
     if (!config.corsAllowedOrigins.length) {
@@ -28,10 +32,14 @@ function createCorsMiddleware(config) {
                 return callback(null, true);
             }
 
-            return callback(new Error('CORS origin not allowed'));
+            return callback(null, false);
         },
         credentials: true
     });
+}
+
+function withOptionalMiddleware(optionalMiddleware, ...middlewares) {
+    return optionalMiddleware ? [optionalMiddleware, ...middlewares] : middlewares;
 }
 
 function createRateLimiter(windowMs, max) {
@@ -41,6 +49,53 @@ function createRateLimiter(windowMs, max) {
         standardHeaders: true,
         legacyHeaders: false
     });
+}
+
+function createFrontendMiddleware(config) {
+    const indexPath = path.join(config.frontendDistPath, 'index.html');
+    if (!fs.existsSync(indexPath)) {
+        return null;
+    }
+
+    const staticMiddleware = express.static(config.frontendDistPath, {
+        index: false,
+        maxAge: '1y',
+        immutable: true,
+        setHeaders(res, filePath) {
+            if (filePath.endsWith('index.html')) {
+                res.setHeader('Cache-Control', 'no-cache');
+                return;
+            }
+
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+    });
+
+    const htmlFallback = (req, res, next) => {
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+            return next();
+        }
+
+        if (req.path.startsWith('/v1/') || req.path === '/health') {
+            return next();
+        }
+
+        if (path.extname(req.path)) {
+            return next();
+        }
+
+        const acceptsHtml = req.accepts(['html', 'json']) === 'html';
+        if (!acceptsHtml) {
+            return next();
+        }
+
+        return res.sendFile(indexPath);
+    };
+
+    return {
+        staticMiddleware,
+        htmlFallback
+    };
 }
 
 export function createApp(config) {
@@ -57,10 +112,6 @@ export function createApp(config) {
     }));
 
     const corsMiddleware = createCorsMiddleware(config);
-    if (corsMiddleware) {
-        app.use(corsMiddleware);
-    }
-
     app.use(express.json({
         limit: config.maxJsonBodyBytes
     }));
@@ -69,19 +120,28 @@ export function createApp(config) {
     const userAuth = createUserAuth(config);
     const inboundLimiter = createRateLimiter(config.inboundRateLimitWindowMs, config.inboundRateLimitMax);
     const authLimiter = createRateLimiter(config.authRateLimitWindowMs, config.authRateLimitMax);
+    const telegramLimiter = createRateLimiter(config.telegramWebhookRateLimitWindowMs, config.telegramWebhookRateLimitMax);
 
-    app.use('/health', createHealthRouter(config));
-    app.use('/v1/inbound', inboundLimiter, inboundAuth, createInboundRouter(config));
-    app.use('/v1/auth', authLimiter, createAuthRouter(config, userAuth));
-    app.use('/v1/users', authLimiter, userAuth, createUsersRouter(config));
-    app.use('/v1/admins', authLimiter, userAuth, createAdminsRouter(config));
-    app.use('/v1/permissions', authLimiter, userAuth, createPermissionsRouter(config));
-    app.use('/v1/domains', authLimiter, userAuth, createDomainsRouter(config));
-    app.use('/v1/email-registers', authLimiter, userAuth, createEmailRegistersRouter(config));
-    app.use('/v1/emails', authLimiter, userAuth, createEmailsRouter(config));
-    app.use('/v1/groups', authLimiter, userAuth, createGroupsRouter(config));
-    app.use('/v1/inboxes', authLimiter, userAuth, createInboxesRouter(config));
-    app.use('/v1/maintenance', authLimiter, userAuth, createMaintenanceRouter(config));
+    app.use('/health', ...withOptionalMiddleware(corsMiddleware, createHealthRouter(config)));
+    app.use('/v1/inbound', ...withOptionalMiddleware(corsMiddleware, inboundLimiter, inboundAuth, createInboundRouter(config)));
+    app.use('/v1/auth', ...withOptionalMiddleware(corsMiddleware, authLimiter, createAuthRouter(config, userAuth)));
+    app.use('/v1/users', ...withOptionalMiddleware(corsMiddleware, authLimiter, userAuth, createUsersRouter(config)));
+    app.use('/v1/admins', ...withOptionalMiddleware(corsMiddleware, authLimiter, userAuth, createAdminsRouter(config)));
+    app.use('/v1/permissions', ...withOptionalMiddleware(corsMiddleware, authLimiter, userAuth, createPermissionsRouter(config)));
+    app.use('/v1/domains', ...withOptionalMiddleware(corsMiddleware, authLimiter, userAuth, createDomainsRouter(config)));
+    app.use('/v1/email-registers', ...withOptionalMiddleware(corsMiddleware, authLimiter, userAuth, createEmailRegistersRouter(config)));
+    app.use('/v1/emails', ...withOptionalMiddleware(corsMiddleware, authLimiter, userAuth, createEmailsRouter(config)));
+    app.use('/v1/groups', ...withOptionalMiddleware(corsMiddleware, authLimiter, userAuth, createGroupsRouter(config)));
+    app.use('/v1/inboxes', ...withOptionalMiddleware(corsMiddleware, authLimiter, userAuth, createInboxesRouter(config)));
+    app.use('/v1/maintenance', ...withOptionalMiddleware(corsMiddleware, authLimiter, userAuth, createMaintenanceRouter(config)));
+    app.use('/v1/system', ...withOptionalMiddleware(corsMiddleware, authLimiter, userAuth, createSystemRouter(config)));
+    app.use('/v1/telegram', ...withOptionalMiddleware(corsMiddleware, telegramLimiter, createTelegramRouter(config)));
+
+    const frontendMiddleware = createFrontendMiddleware(config);
+    if (frontendMiddleware) {
+        app.use(frontendMiddleware.staticMiddleware);
+        app.get(/^(?!\/v1\/|\/health$).*/, frontendMiddleware.htmlFallback);
+    }
 
     app.use(notFoundHandler);
     app.use(errorHandler);

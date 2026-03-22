@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
@@ -168,6 +168,26 @@ async function initializeDatabase(config) {
             UNIQUE(group_id, email_id),
             UNIQUE(group_id, position)
         );
+
+        CREATE TABLE IF NOT EXISTS telegram_outbox (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email_id INTEGER NOT NULL REFERENCES emails(id) ON DELETE CASCADE,
+            chat_id TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'sending', 'sent', 'failed')),
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            next_attempt_at TEXT NOT NULL,
+            last_error TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            sent_at TEXT,
+            UNIQUE(email_id, chat_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS system_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
     `);
 
     await rebuildPermissionsTableIfNeeded(db);
@@ -194,6 +214,9 @@ async function initializeDatabase(config) {
         CREATE INDEX IF NOT EXISTS idx_groups_owner_updated ON groups (owner_user_id, updated_at DESC, id DESC);
         CREATE INDEX IF NOT EXISTS idx_group_emails_group_position ON group_emails (group_id, position ASC, id ASC);
         CREATE INDEX IF NOT EXISTS idx_group_emails_email ON group_emails (email_id);
+        CREATE INDEX IF NOT EXISTS idx_telegram_outbox_status_due ON telegram_outbox (status, next_attempt_at, id);
+        CREATE INDEX IF NOT EXISTS idx_telegram_outbox_email ON telegram_outbox (email_id);
+        CREATE INDEX IF NOT EXISTS idx_system_settings_updated_at ON system_settings (updated_at);
     `);
 
     return db;
@@ -235,6 +258,98 @@ export async function withTransaction(config, handler) {
     const transactionPromise = transactionQueue.then(runTransaction, runTransaction);
     transactionQueue = transactionPromise.catch(() => {});
     return transactionPromise;
+}
+
+export async function withDbLock(config, handler) {
+    const runOperation = async () => {
+        const db = await getDb(config);
+        return handler(db);
+    };
+
+    const operationPromise = transactionQueue.then(runOperation, runOperation);
+    transactionQueue = operationPromise.catch(() => {});
+    return operationPromise;
+}
+
+async function statBytes(filePath) {
+    try {
+        const fileStat = await stat(filePath);
+        return fileStat.size;
+    } catch {
+        return 0;
+    }
+}
+
+async function getDirectorySizeBytes(directoryPath) {
+    let entries;
+    try {
+        entries = await readdir(directoryPath, { withFileTypes: true });
+    } catch {
+        return 0;
+    }
+
+    let total = 0;
+    for (const entry of entries) {
+        const entryPath = path.join(directoryPath, entry.name);
+        if (entry.isDirectory()) {
+            total += await getDirectorySizeBytes(entryPath);
+            continue;
+        }
+
+        if (entry.isFile()) {
+            total += await statBytes(entryPath);
+        }
+    }
+
+    return total;
+}
+
+export async function vacuumDatabase(config) {
+    return withDbLock(config, async (db) => {
+        const beforeMainBytes = await statBytes(config.sqlitePath);
+        const beforeWalBytes = await statBytes(`${config.sqlitePath}-wal`);
+        const beforeShmBytes = await statBytes(`${config.sqlitePath}-shm`);
+
+        await db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+        await db.exec('VACUUM;');
+
+        const afterMainBytes = await statBytes(config.sqlitePath);
+        const afterWalBytes = await statBytes(`${config.sqlitePath}-wal`);
+        const afterShmBytes = await statBytes(`${config.sqlitePath}-shm`);
+
+        return {
+            before: {
+                sqliteBytes: beforeMainBytes,
+                walBytes: beforeWalBytes,
+                shmBytes: beforeShmBytes,
+                totalBytes: beforeMainBytes + beforeWalBytes + beforeShmBytes
+            },
+            after: {
+                sqliteBytes: afterMainBytes,
+                walBytes: afterWalBytes,
+                shmBytes: afterShmBytes,
+                totalBytes: afterMainBytes + afterWalBytes + afterShmBytes
+            }
+        };
+    });
+}
+
+export async function getStorageStats(config) {
+    const storageDir = path.dirname(config.sqlitePath);
+    const sqliteBytes = await statBytes(config.sqlitePath);
+    const walBytes = await statBytes(`${config.sqlitePath}-wal`);
+    const shmBytes = await statBytes(`${config.sqlitePath}-shm`);
+    const folderBytes = await getDirectorySizeBytes(storageDir);
+
+    return {
+        storageDir,
+        sqlitePath: config.sqlitePath,
+        sqliteBytes,
+        walBytes,
+        shmBytes,
+        sqliteTotalBytes: sqliteBytes + walBytes + shmBytes,
+        folderBytes
+    };
 }
 
 export async function maybePruneStoredRawMime(config, { force = false } = {}) {

@@ -26,6 +26,25 @@ npm run server:dev
 npm run frontend:dev
 ```
 
+## Production
+
+Build frontend một lần rồi chạy backend:
+
+```bash
+npm run build
+npm run start
+```
+
+Sau khi build, `new_server` sẽ serve luôn file trong `new_frontend/dist` ở cùng origin.
+
+Muốn sinh `.env` production với secret khởi tạo:
+
+```bash
+npm run env:init
+```
+
+Lệnh này tạo hoặc cập nhật `.env` ở root repo. `npm run start` sẽ tự source file này nếu tồn tại.
+
 ## Login mặc định local dev
 
 - `username`: `admin`
@@ -34,6 +53,9 @@ npm run frontend:dev
 ## Scripts chính
 
 ```bash
+npm run build
+npm run env:init
+npm run start
 npm run server:start
 npm run frontend:build
 npm run frontend:lint
@@ -49,10 +71,16 @@ Các script root tự set default local:
 - `PORT=3001`
 - `NEW_SERVER_SQLITE_PATH=./data/new-server-dev.sqlite`
 - `INBOUND_AUTH_TOKEN=dev-inbound-token`
-- `AUTH_JWT_SECRET=dev-jwt-secret`
-- `API_KEY_PEPPER=dev-api-pepper`
 - `BOOTSTRAP_ADMIN_USERNAME=admin`
 - `BOOTSTRAP_ADMIN_PASSWORD=admin-pass-123`
 - `CORS_ALLOWED_ORIGINS=http://127.0.0.1:3002`
 
 M có thể override bằng env trước khi chạy script.
+
+Lưu ý: `BOOTSTRAP_ADMIN_*` ở script dev chỉ dành cho local bootstrap. Backend hiện không còn ghi đè password/profile của user đã tồn tại khi restart.
+
+## Telegram Bot
+
+Backend hiện support Telegram bot ở webhook mode. Cấu hình chính của bot giờ được lưu qua frontend admin, không cần env Telegram riêng cho token/webhook nữa.
+
+Bot map user qua `users.telegram_id` và dùng permission/mailbox registration hiện có.

@@ -286,7 +286,6 @@ export default function AdminEmailsView({ token }) {
 
       <EmailFeedList
         title="Mail hệ thống"
-        description="Danh sách quản trị toàn hệ thống. Chọn domain nhanh ở header, lọc theo người nhận khi cần và mở modal để xem chi tiết hoặc xóa mail."
         total={listing.count || listing.emails.length}
         emails={listing.emails}
         selectedEmailId={selectedEmailId}

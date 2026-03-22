@@ -50,6 +50,32 @@ export function formatRelativeTime(value) {
   return formatter.format(deltaDays, 'day')
 }
 
+export function formatBytes(value) {
+  const bytes = Number(value)
+  if (!Number.isFinite(bytes) || bytes < 0) {
+    return 'N/A'
+  }
+
+  if (bytes < 1024) {
+    return `${bytes} B`
+  }
+
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let size = bytes / 1024
+  let unitIndex = 0
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024
+    unitIndex += 1
+  }
+
+  const maximumFractionDigits = size >= 100 ? 0 : size >= 10 ? 1 : 2
+  return `${size.toLocaleString('vi-VN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits,
+  })} ${units[unitIndex]}`
+}
+
 export function parseIdList(value) {
   return String(value || '')
     .split(/[\s,;]+/)

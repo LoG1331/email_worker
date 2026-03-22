@@ -195,14 +195,6 @@ export function getPermission(token, permissionId) {
   return request(`/v1/permissions/${permissionId}`, { token })
 }
 
-export function updatePermission(token, permissionId, payload) {
-  return request(`/v1/permissions/${permissionId}`, {
-    method: 'PATCH',
-    token,
-    body: payload,
-  })
-}
-
 export function deletePermission(token, permissionId) {
   return request(`/v1/permissions/${permissionId}`, {
     method: 'DELETE',
@@ -226,11 +218,10 @@ export function getDomain(token, domain) {
   return request(`/v1/domains/${encodeURIComponent(domain)}`, { token })
 }
 
-export function updateDomain(token, domain, payload) {
+export function deleteDomain(token, domain) {
   return request(`/v1/domains/${encodeURIComponent(domain)}`, {
-    method: 'PATCH',
+    method: 'DELETE',
     token,
-    body: payload,
   })
 }
 
@@ -244,6 +235,10 @@ export function createEmailRegister(token, payload) {
     token,
     body: payload,
   })
+}
+
+export function createRandomEmailRegister(token, filters = {}) {
+  return request(withQuery('/v1/email-registers/new-mail', filters), { token })
 }
 
 export function deleteEmailRegister(token, registrationId) {
@@ -355,6 +350,37 @@ export function removeGroupEmail(token, groupId, emailId) {
 
 export function pruneRawMime(token) {
   return request('/v1/maintenance/prune-raw-mime', {
+    method: 'POST',
+    token,
+  })
+}
+
+export function getMaintenanceStorage(token) {
+  return request('/v1/maintenance/storage', { token })
+}
+
+export function pruneEmails(token, payload) {
+  return request('/v1/maintenance/prune-emails', {
+    method: 'POST',
+    token,
+    body: payload,
+  })
+}
+
+export function getTelegramSettings(token) {
+  return request('/v1/system/telegram', { token })
+}
+
+export function updateTelegramSettings(token, payload) {
+  return request('/v1/system/telegram', {
+    method: 'PATCH',
+    token,
+    body: payload,
+  })
+}
+
+export function registerTelegramCommands(token) {
+  return request('/v1/system/telegram/commands/register', {
     method: 'POST',
     token,
   })

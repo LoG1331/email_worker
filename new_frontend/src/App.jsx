@@ -1,5 +1,6 @@
 import { Suspense, lazy, startTransition, useEffect, useMemo, useState } from 'react'
 import {
+  Bot,
   Crown,
   FolderKanban,
   Globe2,
@@ -20,6 +21,7 @@ const EmailsView = lazy(() => import('./views/EmailsView.jsx'))
 const GroupsView = lazy(() => import('./views/GroupsView.jsx'))
 const OverviewView = lazy(() => import('./views/OverviewView.jsx'))
 const PermissionsView = lazy(() => import('./views/PermissionsView.jsx'))
+const TelegramView = lazy(() => import('./views/TelegramView.jsx'))
 const UsersView = lazy(() => import('./views/UsersView.jsx'))
 
 const STORAGE_KEY = 'new_frontend.sessionToken'
@@ -33,6 +35,7 @@ const BASE_NAV_ITEMS = [
 
 const ADMIN_NAV_ITEMS = [
   { id: 'admin-mails', label: 'Mail hệ thống', icon: Mail },
+  { id: 'telegram', label: 'Telegram Bot', icon: Bot },
   { id: 'users', label: 'Người dùng', icon: Users2 },
   { id: 'permissions', label: 'Quyền', icon: ShieldCheck },
   { id: 'admins', label: 'Admin', icon: Crown },
@@ -44,6 +47,7 @@ const VIEW_LABELS = {
   'admin-mails': AdminEmailsView,
   groups: GroupsView,
   domains: DomainsView,
+  telegram: TelegramView,
   users: UsersView,
   permissions: PermissionsView,
   admins: AdminsView,
@@ -151,7 +155,7 @@ export default function App() {
       return
     }
 
-    if (activeView === 'admin-mails' || activeView === 'users' || activeView === 'permissions' || activeView === 'admins') {
+    if (activeView === 'admin-mails' || activeView === 'telegram' || activeView === 'users' || activeView === 'permissions' || activeView === 'admins') {
       setActiveView('overview')
     }
   }, [account, activeView])
@@ -209,10 +213,10 @@ export default function App() {
   if (booting) {
     return (
       <main className="app-shell flex min-h-screen items-center justify-center px-4">
-        <div className="panel-strong rounded-[2rem] px-8 py-10 text-center">
-          <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[var(--accent)]">Khôi phục phiên</p>
-          <h1 className="mt-3 font-display text-4xl tracking-[-0.04em] text-[var(--ink)]">Mail Console</h1>
-          <p className="mt-3 text-sm leading-6 text-[var(--muted)]">Đang đồng bộ session JWT và nạp hồ sơ người dùng.</p>
+        <div className="panel-strong rounded-[1.5rem] px-6 py-7 text-center">
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[var(--accent)]">Khôi phục phiên</p>
+          <h1 className="mt-2 font-display text-[2rem] tracking-[-0.04em] text-[var(--ink)]">Mail Console</h1>
+          <p className="mt-2 text-[13px] text-[var(--muted)]">Đang tải</p>
         </div>
       </main>
     )
@@ -228,18 +232,16 @@ export default function App() {
     <AppShell
       account={account}
       activeView={activeView}
+      accessibleDomains={accessibleDomains}
       navItems={navItems}
       onNavigate={(viewId) => startTransition(() => setActiveView(viewId))}
       onLogout={handleLogout}
     >
       <Suspense
         fallback={(
-          <section className="panel panel-tone-slate rounded-[1.75rem] px-6 py-10 sm:px-8">
-            <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[var(--accent)]">Đang nạp view</p>
-            <h2 className="mt-3 font-display text-3xl tracking-[-0.04em] text-[var(--ink)]">Đang tải module</h2>
-            <p className="mt-3 max-w-xl text-sm leading-6 text-[var(--muted)]">
-              View được tách bundle riêng để giảm lag lúc khởi động và chỉ nạp khi cần.
-            </p>
+          <section className="panel panel-tone-slate rounded-[1.5rem] px-5 py-7 sm:px-6">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[var(--accent)]">Đang nạp view</p>
+            <h2 className="mt-2 font-display text-[1.8rem] tracking-[-0.04em] text-[var(--ink)]">Đang tải</h2>
           </section>
         )}
       >

@@ -12,6 +12,48 @@ function cleanText(value) {
     return String(value ?? '').trim();
 }
 
+async function reindexGroupPositionsTx(db, groupIds) {
+    for (const groupId of groupIds) {
+        const rows = await db.all(
+            `
+                SELECT id
+                FROM group_emails
+                WHERE group_id = ?
+                ORDER BY position ASC, id ASC
+            `,
+            [groupId]
+        );
+
+        let position = 0;
+        for (const row of rows) {
+            position += 1;
+            await db.run(
+                `
+                    UPDATE group_emails
+                    SET position = ?
+                    WHERE id = ?
+                `,
+                [position, row.id]
+            );
+        }
+    }
+}
+
+async function touchGroupsTx(db, groupIds) {
+    if (!groupIds.length) {
+        return;
+    }
+
+    await db.run(
+        `
+            UPDATE groups
+            SET updated_at = ?
+            WHERE id IN (${groupIds.map(() => '?').join(', ')})
+        `,
+        [nowIso(), ...groupIds]
+    );
+}
+
 function normalizeStatus(value, fallback = 'active') {
     const normalized = cleanText(value).toLowerCase();
     if (!normalized) {
@@ -159,7 +201,7 @@ export async function getDomain(config, domainName) {
     return mapDomainRow(row);
 }
 
-export async function upsertDomain(config, payload) {
+export async function createDomain(config, payload) {
     const domain = normalizeDomain(payload.domain);
     if (!domain) {
         throw new HttpError(400, 'Valid domain is required');
@@ -172,6 +214,20 @@ export async function upsertDomain(config, payload) {
     const timestamp = nowIso();
 
     await withTransaction(config, async (db) => {
+        const current = await db.get(
+            `
+                SELECT id
+                FROM domains
+                WHERE name = ?
+                LIMIT 1
+            `,
+            [domain]
+        );
+
+        if (current) {
+            throw new HttpError(409, 'Domain already exists');
+        }
+
         if (isDefault) {
             await db.run(
                 `
@@ -196,12 +252,6 @@ export async function upsertDomain(config, payload) {
                     updated_at
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(name) DO UPDATE SET
-                    description = excluded.description,
-                    status = excluded.status,
-                    inbound_enabled = excluded.inbound_enabled,
-                    is_default = excluded.is_default,
-                    updated_at = excluded.updated_at
             `,
             [
                 domain,
@@ -218,48 +268,36 @@ export async function upsertDomain(config, payload) {
     return getDomain(config, domain);
 }
 
-export async function updateDomain(config, domainName, payload) {
+export async function deleteDomain(config, domainName) {
     const normalizedDomain = normalizeDomain(domainName);
-    await withTransaction(config, async (db) => {
-        const current = await getDomainRecord(db, normalizedDomain);
-        const nextDescription = payload.description === undefined ? current.description : cleanText(payload.description);
-        const nextStatus = payload.status === undefined ? current.status : normalizeStatus(payload.status, current.status);
-        const nextInboundEnabled = payload.inboundEnabled === undefined ? Boolean(current.inbound_enabled) : payload.inboundEnabled === true;
-        const nextIsDefault = payload.isDefault === undefined ? Boolean(current.is_default) : payload.isDefault === true;
-        const timestamp = nowIso();
+    if (!normalizedDomain) {
+        throw new HttpError(400, 'Valid domain is required');
+    }
 
-        if (nextIsDefault) {
-            await db.run(
-                `
-                    UPDATE domains
-                    SET is_default = 0,
-                        updated_at = ?
-                    WHERE is_default = 1
-                `,
-                [timestamp]
-            );
+    await withTransaction(config, async (db) => {
+        const domain = await getDomainRecord(db, normalizedDomain);
+        const affectedGroups = await db.all(
+            `
+                SELECT DISTINCT g.id
+                FROM groups g
+                JOIN group_emails ge ON ge.group_id = g.id
+                JOIN emails e ON e.id = ge.email_id
+                WHERE e.domain_id = ?
+                ORDER BY g.id ASC
+            `,
+            [domain.id]
+        );
+
+        await db.run(`DELETE FROM domains WHERE id = ?`, [domain.id]);
+
+        if (!affectedGroups.length) {
+            return;
         }
 
-        await db.run(
-            `
-                UPDATE domains
-                SET description = ?,
-                    status = ?,
-                    inbound_enabled = ?,
-                    is_default = ?,
-                    updated_at = ?
-                WHERE name = ?
-            `,
-            [
-                nextDescription,
-                nextStatus,
-                nextInboundEnabled ? 1 : 0,
-                nextIsDefault ? 1 : 0,
-                timestamp,
-                normalizedDomain
-            ]
-        );
+        const affectedGroupIds = affectedGroups.map((row) => row.id);
+        await reindexGroupPositionsTx(db, affectedGroupIds);
+        await touchGroupsTx(db, affectedGroupIds);
     });
 
-    return getDomain(config, normalizedDomain);
+    return { success: true };
 }

@@ -1,6 +1,7 @@
 import express from 'express';
 import { asyncHandler } from '../utils/async-handler.mjs';
 import { getDb } from '../db/index.mjs';
+import { getTelegramRuntimeStatus } from '../telegram/runtime.mjs';
 
 export function createHealthRouter(config) {
     const router = express.Router();
@@ -8,6 +9,7 @@ export function createHealthRouter(config) {
     router.get('/', asyncHandler(async (req, res) => {
         await getDb(config);
         const now = new Date();
+        const telegramRuntime = await getTelegramRuntimeStatus(config);
         res.json({
             ok: true,
             service: 'new_server',
@@ -17,6 +19,16 @@ export function createHealthRouter(config) {
             storage: {
                 engine: 'sqlite',
                 ready: true
+            },
+            telegram: {
+                enabled: telegramRuntime.enabled,
+                workerActive: telegramRuntime.workerActive,
+                processing: telegramRuntime.processing,
+                lastWebhookRegisteredAt: telegramRuntime.lastWebhookRegisteredAt,
+                lastPollAt: telegramRuntime.lastPollAt,
+                lastDeliveryAt: telegramRuntime.lastDeliveryAt,
+                lastError: telegramRuntime.lastError,
+                outbox: telegramRuntime.outbox
             },
             requestId: req.requestId
         });
