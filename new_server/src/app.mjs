@@ -21,6 +21,19 @@ import { createMaintenanceRouter } from './routes/maintenance.routes.mjs';
 import { createSystemRouter } from './routes/system.routes.mjs';
 import { createTelegramRouter } from './routes/telegram.routes.mjs';
 
+function createHelmetOptions() {
+    const directives = helmet.contentSecurityPolicy.getDefaultDirectives();
+    directives['img-src'] = [`'self'`, 'data:', 'blob:', 'https:', 'http:'];
+    directives['media-src'] = [`'self'`, 'data:', 'blob:', 'https:', 'http:'];
+
+    return {
+        crossOriginResourcePolicy: false,
+        contentSecurityPolicy: {
+            directives
+        }
+    };
+}
+
 function createCorsMiddleware(config) {
     if (!config.corsAllowedOrigins.length) {
         return null;
@@ -107,9 +120,7 @@ export function createApp(config) {
 
     app.disable('x-powered-by');
     app.use(requestContext);
-    app.use(helmet({
-        crossOriginResourcePolicy: false
-    }));
+    app.use(helmet(createHelmetOptions()));
 
     const corsMiddleware = createCorsMiddleware(config);
     app.use(express.json({
