@@ -93,7 +93,9 @@ Commands:
 
 - `/start`
 - `/help`
+- `/domains`
 - `/mailboxes`
+- `/newmail [domain]`
 - `/register <email>`
 - `/unregister <email>`
 - `/inbox <email>`

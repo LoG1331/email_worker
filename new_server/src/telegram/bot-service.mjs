@@ -2,10 +2,12 @@ import { createHmac } from 'node:crypto';
 import { convert } from 'html-to-text';
 import { getTelegramAuthContext } from '../services/account-service.mjs';
 import {
+    createRandomEmailRegister,
     createEmailRegister,
     deleteEmailRegister,
     getEmailRegisterByAddress,
     getEmailRegisterById,
+    listAvailableRegistrationDomains,
     listEmailRegisters
 } from '../services/email-register-service.mjs';
 import {
@@ -134,7 +136,9 @@ function helpText() {
         'Supported commands:',
         '/start',
         '/help',
+        '/domains',
         '/mailboxes',
+        '/newmail [domain]',
         '/register <email>',
         '/unregister <email>',
         '/inbox <email>',
@@ -148,7 +152,9 @@ export function getTelegramBotCommands() {
     return [
         { command: 'start', description: 'Show bot introduction and available commands' },
         { command: 'help', description: 'Show the supported command list' },
+        { command: 'domains', description: 'List domains available for mailbox registration' },
         { command: 'mailboxes', description: 'List registered mailboxes for your account' },
+        { command: 'newmail', description: 'Create a new random mailbox you are allowed to use' },
         { command: 'register', description: 'Register a mailbox you are allowed to use' },
         { command: 'unregister', description: 'Unregister one of your mailboxes' },
         { command: 'inbox', description: 'Open the inbox for a registered mailbox' },
@@ -158,12 +164,35 @@ export function getTelegramBotCommands() {
     ];
 }
 
-function unauthorizedText() {
+function unauthorizedText(telegramUserId = '') {
+    const normalizedTelegramUserId = String(telegramUserId || '').trim();
+    if (normalizedTelegramUserId) {
+        return [
+            'This Telegram account is not linked to an active user.',
+            `Your Telegram user id is: ${normalizedTelegramUserId}`,
+            'Set this value as telegramId in the system first.'
+        ].join('\n');
+    }
+
     return 'This Telegram account is not linked to an active user. Set your telegramId in the system first.';
 }
 
 function privateChatText() {
     return 'Use this bot in a private chat only.';
+}
+
+function formatDomainsText(domains) {
+    const lines = ['Available domains'];
+    if (!domains.length) {
+        lines.push('', 'No active inbound-enabled domain is available.');
+        return lines.join('\n');
+    }
+
+    domains.forEach((domain, index) => {
+        lines.push('', `${index + 1}. ${domain}`);
+    });
+
+    return lines.join('\n');
 }
 
 function getPlainEmailBody(email) {
@@ -509,7 +538,7 @@ async function handleMessageUpdate(config, update) {
 
     const auth = await resolveTelegramAuth(config, update);
     if (!auth) {
-        await sendText(client, message.chat.id, unauthorizedText());
+        await sendText(client, message.chat.id, unauthorizedText(message.from?.id));
         return { handled: true };
     }
 
@@ -534,10 +563,29 @@ async function handleMessageUpdate(config, update) {
         case '/help':
             await sendText(client, message.chat.id, helpText());
             return { handled: true };
+        case '/domains': {
+            const domains = await listAvailableRegistrationDomains(config, auth);
+            await sendText(client, message.chat.id, formatDomainsText(domains));
+            return { handled: true };
+        }
         case '/mailboxes': {
             const rendered = await renderMailboxesMessage(config, auth, 0);
             await sendText(client, message.chat.id, rendered.text, {
                 reply_markup: rendered.reply_markup
+            });
+            return { handled: true };
+        }
+        case '/newmail': {
+            const registration = await createRandomEmailRegister(config, auth, {
+                domain: args || undefined
+            });
+            await sendText(client, message.chat.id, `Registered ${registration.emailAddress}.`, {
+                reply_markup: makeInlineKeyboard([
+                    [{
+                        text: 'Open inbox',
+                        callback_data: buildCallbackData(config, 'ib', registration.id, 0)
+                    }]
+                ])
             });
             return { handled: true };
         }
@@ -634,7 +682,7 @@ async function handleCallbackUpdate(config, update) {
 
     const auth = await resolveTelegramAuth(config, update);
     if (!auth) {
-        await answerError(client, callbackQuery.id, unauthorizedText());
+        await answerError(client, callbackQuery.id, unauthorizedText(callbackQuery.from?.id));
         return { handled: true };
     }
 
@@ -792,11 +840,11 @@ export async function handleTelegramUpdate(config, update) {
 
     try {
         if (update?.message) {
-            return handleMessageUpdate(config, update);
+            return await handleMessageUpdate(config, update);
         }
 
         if (update?.callback_query) {
-            return handleCallbackUpdate(config, update);
+            return await handleCallbackUpdate(config, update);
         }
     } catch (error) {
         if (error instanceof HttpError) {

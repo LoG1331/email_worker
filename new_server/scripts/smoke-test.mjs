@@ -384,7 +384,7 @@ async function main() {
             token: adminToken
         });
         assertStatus(registerCommands, 200, 'register telegram commands');
-        assert.equal(registerCommands.body.count, 9);
+        assert.equal(registerCommands.body.count, 11);
         assert.equal(fakeTelegram.calls[3]?.method, 'setMyCommands');
         assert.equal(Array.isArray(fakeTelegram.calls[3]?.body?.commands), true);
         assert.equal(fakeTelegram.calls[3]?.body?.commands[0]?.command, 'start');
@@ -447,6 +447,46 @@ async function main() {
             }
         });
         assertStatus(registerMissingDomainMailbox, 404, 'register mailbox requires existing domain');
+
+        const createDisabledDomain = await request(baseUrl, '/v1/domains', {
+            method: 'POST',
+            token: adminToken,
+            json: {
+                domain: 'disabled.test',
+                description: 'Disabled domain',
+                status: 'disabled'
+            }
+        });
+        assertStatus(createDisabledDomain, 201, 'create disabled domain');
+
+        const registerDisabledDomainMailbox = await request(baseUrl, '/v1/email-registers', {
+            method: 'POST',
+            token: adminToken,
+            json: {
+                emailAddress: 'norecv@disabled.test'
+            }
+        });
+        assertStatus(registerDisabledDomainMailbox, 409, 'register mailbox blocked on disabled domain');
+
+        const createInboundOffDomain = await request(baseUrl, '/v1/domains', {
+            method: 'POST',
+            token: adminToken,
+            json: {
+                domain: 'inboundoff.test',
+                description: 'Inbound off domain',
+                inboundEnabled: false
+            }
+        });
+        assertStatus(createInboundOffDomain, 201, 'create inbound-off domain');
+
+        const registerInboundOffMailbox = await request(baseUrl, '/v1/email-registers', {
+            method: 'POST',
+            token: adminToken,
+            json: {
+                emailAddress: 'norecv@inboundoff.test'
+            }
+        });
+        assertStatus(registerInboundOffMailbox, 409, 'register mailbox blocked when inbound disabled');
 
         const registerAdminMailbox = await request(baseUrl, '/v1/email-registers/new-mail?domain=example.com', {
             token: adminToken
@@ -594,6 +634,25 @@ async function main() {
         assert.equal(fakeTelegram.calls.at(-1)?.method, 'sendMessage');
         assert.match(String(fakeTelegram.calls.at(-1)?.body?.text || ''), /Supported commands:/);
 
+        const telegramUnlinkedStart = await request(baseUrl, '/v1/telegram/webhook', {
+            method: 'POST',
+            headers: {
+                'X-Telegram-Bot-Api-Secret-Token': telegramSettings.webhookSecret
+            },
+            json: {
+                update_id: 21,
+                message: {
+                    message_id: 21,
+                    chat: { id: 999000111, type: 'private' },
+                    from: { id: 999000111, is_bot: false, first_name: 'Guest' },
+                    text: '/start'
+                }
+            }
+        });
+        assertStatus(telegramUnlinkedStart, 200, 'telegram start for unlinked user');
+        assert.equal(fakeTelegram.calls.at(-1)?.method, 'sendMessage');
+        assert.match(String(fakeTelegram.calls.at(-1)?.body?.text || ''), /Your Telegram user id is: 999000111/);
+
         const telegramRegisterAlice = await request(baseUrl, '/v1/telegram/webhook', {
             method: 'POST',
             headers: {
@@ -629,6 +688,100 @@ async function main() {
         });
         assertStatus(telegramMailboxes, 200, 'telegram mailboxes');
         assert.match(String(fakeTelegram.calls.at(-1)?.body?.text || ''), /alice@example\.com/);
+
+        const telegramDomains = await request(baseUrl, '/v1/telegram/webhook', {
+            method: 'POST',
+            headers: {
+                'X-Telegram-Bot-Api-Secret-Token': telegramSettings.webhookSecret
+            },
+            json: {
+                update_id: 39,
+                message: {
+                    message_id: 39,
+                    chat: { id: 123456789, type: 'private' },
+                    from: { id: 123456789, is_bot: false, first_name: 'Alice' },
+                    text: '/domains'
+                }
+            }
+        });
+        assertStatus(telegramDomains, 200, 'telegram domains');
+        assert.match(String(fakeTelegram.calls.at(-1)?.body?.text || ''), /Available domains/);
+        assert.match(String(fakeTelegram.calls.at(-1)?.body?.text || ''), /example\.com/);
+        assert.match(String(fakeTelegram.calls.at(-1)?.body?.text || ''), /cleanup\.test/);
+        assert.doesNotMatch(String(fakeTelegram.calls.at(-1)?.body?.text || ''), /disabled\.test/);
+        assert.doesNotMatch(String(fakeTelegram.calls.at(-1)?.body?.text || ''), /inboundoff\.test/);
+
+        const telegramNewMail = await request(baseUrl, '/v1/telegram/webhook', {
+            method: 'POST',
+            headers: {
+                'X-Telegram-Bot-Api-Secret-Token': telegramSettings.webhookSecret
+            },
+            json: {
+                update_id: 40,
+                message: {
+                    message_id: 40,
+                    chat: { id: 123456789, type: 'private' },
+                    from: { id: 123456789, is_bot: false, first_name: 'Alice' },
+                    text: '/newmail cleanup.test'
+                }
+            }
+        });
+        assertStatus(telegramNewMail, 200, 'telegram newmail');
+        assert.match(String(fakeTelegram.calls.at(-1)?.body?.text || ''), /^Registered [a-z0-9]+(?:[._-]?[a-z0-9]+)*@cleanup\.test\.$/);
+
+        const telegramNewMailOnDomain = await request(baseUrl, '/v1/telegram/webhook', {
+            method: 'POST',
+            headers: {
+                'X-Telegram-Bot-Api-Secret-Token': telegramSettings.webhookSecret
+            },
+            json: {
+                update_id: 40_1,
+                message: {
+                    message_id: 40_1,
+                    chat: { id: 123456789, type: 'private' },
+                    from: { id: 123456789, is_bot: false, first_name: 'Alice' },
+                    text: '/newmail example.com'
+                }
+            }
+        });
+        assertStatus(telegramNewMailOnDomain, 200, 'telegram newmail with domain');
+        assert.match(String(fakeTelegram.calls.at(-1)?.body?.text || ''), /^Registered [a-z0-9]+(?:[._-]?[a-z0-9]+)*@example\.com\.$/);
+
+        const telegramRegisterMissingArg = await request(baseUrl, '/v1/telegram/webhook', {
+            method: 'POST',
+            headers: {
+                'X-Telegram-Bot-Api-Secret-Token': telegramSettings.webhookSecret
+            },
+            json: {
+                update_id: 41,
+                message: {
+                    message_id: 41,
+                    chat: { id: 123456789, type: 'private' },
+                    from: { id: 123456789, is_bot: false, first_name: 'Alice' },
+                    text: '/register'
+                }
+            }
+        });
+        assertStatus(telegramRegisterMissingArg, 200, 'telegram register missing arg');
+        assert.match(String(fakeTelegram.calls.at(-1)?.body?.text || ''), /Usage: \/register <email>/);
+
+        const telegramHelpAfterRegisterError = await request(baseUrl, '/v1/telegram/webhook', {
+            method: 'POST',
+            headers: {
+                'X-Telegram-Bot-Api-Secret-Token': telegramSettings.webhookSecret
+            },
+            json: {
+                update_id: 42,
+                message: {
+                    message_id: 42,
+                    chat: { id: 123456789, type: 'private' },
+                    from: { id: 123456789, is_bot: false, first_name: 'Alice' },
+                    text: '/help'
+                }
+            }
+        });
+        assertStatus(telegramHelpAfterRegisterError, 200, 'telegram help after register error');
+        assert.match(String(fakeTelegram.calls.at(-1)?.body?.text || ''), /Supported commands:/);
 
         const createBobDomainPermission = await request(baseUrl, '/v1/permissions', {
             method: 'POST',
@@ -752,7 +905,7 @@ async function main() {
             token: aliceToken
         });
         assertStatus(listAliceRegisters, 200, 'list alice registrations');
-        assert.equal(listAliceRegisters.body.count, 2);
+        assert.equal(listAliceRegisters.body.count, 4);
 
         const bobLogin = await request(baseUrl, '/v1/auth/login', {
             method: 'POST',
@@ -999,8 +1152,9 @@ async function main() {
             token: aliceToken
         });
         assertStatus(listAliceRegistersAfterDomainDelete, 200, 'list registrations after domain delete');
-        assert.equal(listAliceRegistersAfterDomainDelete.body.count, 1);
-        assert.deepEqual(listAliceRegistersAfterDomainDelete.body.registrations.map((item) => item.emailAddress), ['alice@example.com']);
+        assert.equal(listAliceRegistersAfterDomainDelete.body.count, 2);
+        assert.ok(listAliceRegistersAfterDomainDelete.body.registrations.some((item) => item.emailAddress === 'alice@example.com'));
+        assert.ok(listAliceRegistersAfterDomainDelete.body.registrations.every((item) => item.domain === 'example.com'));
 
         const fetchGroupAfterDomainDelete = await request(baseUrl, `/v1/groups/${groupId}/emails`, {
             token: aliceToken

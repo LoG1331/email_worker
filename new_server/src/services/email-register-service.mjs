@@ -262,7 +262,7 @@ function mapEmailRegisterRow(row) {
 async function getDomainForRegistrationTx(db, domainName) {
     const row = await db.get(
         `
-            SELECT id, name
+            SELECT id, name, status, inbound_enabled
             FROM domains
             WHERE name = ?
             LIMIT 1
@@ -272,6 +272,14 @@ async function getDomainForRegistrationTx(db, domainName) {
 
     if (!row) {
         throw new HttpError(404, 'Domain not found for email registration');
+    }
+
+    if (row.status !== 'active') {
+        throw new HttpError(409, 'Domain is disabled for email registration');
+    }
+
+    if (!row.inbound_enabled) {
+        throw new HttpError(409, 'Inbound is disabled for this domain');
     }
 
     return row;
@@ -405,7 +413,7 @@ async function listCandidateDomainsTx(db, ownerUserId, requestedDomain = '') {
     if (normalizedRequestedDomain) {
         const domain = await db.get(
             `
-                SELECT id, name, status
+                SELECT id, name, status, inbound_enabled
                 FROM domains
                 WHERE name = ?
                 LIMIT 1
@@ -419,6 +427,10 @@ async function listCandidateDomainsTx(db, ownerUserId, requestedDomain = '') {
 
         if (domain.status !== 'active') {
             throw new HttpError(409, 'Domain is disabled for email registration');
+        }
+
+        if (!domain.inbound_enabled) {
+            throw new HttpError(409, 'Inbound is disabled for this domain');
         }
 
         if (!ownerIsAdmin) {
@@ -448,6 +460,7 @@ async function listCandidateDomainsTx(db, ownerUserId, requestedDomain = '') {
                 SELECT name
                 FROM domains
                 WHERE status = 'active'
+                  AND inbound_enabled = 1
                 ORDER BY is_default DESC, name ASC
             `
         )
@@ -459,6 +472,7 @@ async function listCandidateDomainsTx(db, ownerUserId, requestedDomain = '') {
                 WHERE p.user_id = ?
                   AND p.status = 'active'
                   AND d.status = 'active'
+                  AND d.inbound_enabled = 1
                 ORDER BY d.is_default DESC, d.name ASC
             `,
             [ownerUserId]
@@ -466,7 +480,7 @@ async function listCandidateDomainsTx(db, ownerUserId, requestedDomain = '') {
 
     const domains = rows.map(row => row.name).filter(Boolean);
     if (!domains.length) {
-        throw new HttpError(409, 'No active domain is available for automatic mailbox generation');
+        throw new HttpError(409, 'No active inbound-enabled domain is available for automatic mailbox generation');
     }
 
     return domains;
@@ -647,6 +661,12 @@ export async function createRandomEmailRegister(config, auth, options = {}) {
     }
 
     throw new HttpError(409, 'Could not generate a new mailbox automatically');
+}
+
+export async function listAvailableRegistrationDomains(config, auth, options = {}) {
+    const ownerUserId = resolveMutationOwnerUserId(auth, options);
+    const db = await getDb(config);
+    return listCandidateDomainsTx(db, ownerUserId, options.domain ? String(options.domain) : '');
 }
 
 export async function getEmailRegisterById(config, auth, registrationId) {
