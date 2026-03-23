@@ -102,7 +102,7 @@ export function EmailDetailModal({
   onDeleteEmail,
   onClose,
 }) {
-  const [previewMode, setPreviewMode] = useState(() => (email?.html ? 'html' : 'text'))
+  const [previewMode, setPreviewMode] = useState(null)
 
   useEffect(() => {
     if (!open) {
@@ -133,6 +133,7 @@ export function EmailDetailModal({
   const bodyText = getEmailBodyText(email)
   const hasHtmlPreview = Boolean(String(email?.html || '').trim())
   const htmlPreviewDoc = hasHtmlPreview ? buildEmailHtmlPreviewDoc(email.html) : ''
+  const activePreviewMode = previewMode || (hasHtmlPreview ? 'html' : 'text')
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(20,26,28,0.48)] p-0 backdrop-blur-sm sm:items-center sm:p-6" onClick={onClose}>
@@ -198,7 +199,7 @@ export function EmailDetailModal({
               <div className="rounded-[1.35rem] border border-[var(--line)] bg-white/80 p-4 sm:p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--muted)]">
-                    {previewMode === 'html' ? 'HTML preview' : 'Nội dung text'}
+                    {activePreviewMode === 'html' ? 'HTML preview' : 'Nội dung text'}
                   </p>
                   <div className="inline-flex rounded-full border border-[var(--line)] bg-white/88 p-1">
                     <button
@@ -207,7 +208,7 @@ export function EmailDetailModal({
                       disabled={!hasHtmlPreview}
                       className={cn(
                         'rounded-full px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] transition-colors',
-                        previewMode === 'html'
+                        activePreviewMode === 'html'
                           ? 'bg-[var(--accent-soft)] text-[var(--accent-strong)]'
                           : 'text-[var(--muted)] hover:text-[var(--ink)]',
                         !hasHtmlPreview ? 'cursor-not-allowed opacity-40' : '',
@@ -220,7 +221,7 @@ export function EmailDetailModal({
                       onClick={() => setPreviewMode('text')}
                       className={cn(
                         'rounded-full px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] transition-colors',
-                        previewMode === 'text'
+                        activePreviewMode === 'text'
                           ? 'bg-[var(--accent-soft)] text-[var(--accent-strong)]'
                           : 'text-[var(--muted)] hover:text-[var(--ink)]',
                       )}
@@ -230,7 +231,7 @@ export function EmailDetailModal({
                   </div>
                 </div>
 
-                {previewMode === 'html' && hasHtmlPreview ? (
+                {activePreviewMode === 'html' && hasHtmlPreview ? (
                   <div className="mt-3 overflow-hidden rounded-[1.15rem] border border-[var(--line)] bg-[#fffdfa]">
                     <iframe
                       title="Email HTML preview"
