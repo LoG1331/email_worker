@@ -420,6 +420,7 @@ Query:
 - `cursor`: opaque cursor để lấy trang tiếp theo
 - `domain`
 - `address`
+- `search`: có thể nhập nhiều term cách nhau bằng khoảng trắng; mỗi term phải match trên ít nhất một field trong `subject`, `text/html body`, metadata/header đang lưu (`from`, `to`, `messageId`, `envelopeFrom`, `workerName`, `sourceDomain`) hoặc `raw MIME` nếu mail đó còn lưu MIME gốc
 - `scope=registered|system`
 
 Rules:
@@ -444,6 +445,22 @@ Query:
 ### `DELETE /v1/emails/:id`
 
 User thường chỉ xóa được mail thuộc mailbox đã đăng ký và có permission trên domain.
+
+### `POST /v1/emails/bulk-delete`
+
+Body:
+
+```json
+{
+  "emailIds": [1, 2, 3]
+}
+```
+
+Behavior:
+
+- tối đa `200` email IDs mỗi request
+- backend kiểm quyền `write` trên từng email trước khi xóa
+- response trả thêm `deletedIds`, `missingIds`, `deniedIds` để frontend xử lý batch stale selection
 
 ## Inboxes
 

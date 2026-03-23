@@ -66,6 +66,7 @@ Express backend mới cho mail worker forward-only + xử lý domain-first trên
 - `GET /v1/email-registers/new-mail` (session/API key; user theo domain có permission, admin theo toàn bộ domain `active`)
 - `DELETE /v1/email-registers/:registrationId`
 - `GET /v1/emails`
+- `POST /v1/emails/bulk-delete`
 - `GET|DELETE /v1/emails/:id`
 - `GET|DELETE /v1/inboxes/:emailAddress`
 - `GET|POST /v1/groups`
@@ -111,6 +112,7 @@ Commands:
 - `GET /v1/domains` phản ánh đúng domain user đang có permission
 - `GET /v1/emails?scope=registered` luôn khóa theo mailbox đã register của caller, kể cả admin
 - `GET /v1/emails?scope=system` chỉ dành cho admin để đọc toàn bộ mail hệ thống
+- `GET /v1/emails?search=term` hỗ trợ nhiều term, match trên subject/body, metadata mail đang lưu và `raw_mime` nếu còn được giữ
 - `GET /v1/emails`, `GET /v1/inboxes/:emailAddress` và `GET /v1/groups/:groupId/emails` của user thường đều bị chặn bởi `email_registers`
 - Một mailbox chỉ được đăng ký bởi đúng một user trên toàn hệ thống
 - `BOOTSTRAP_ADMIN_*` chỉ nên dùng để tạo admin ban đầu; nếu username đã tồn tại thì backend chỉ ensure quyền admin, không ghi đè password/profile sẵn có

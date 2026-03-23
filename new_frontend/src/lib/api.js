@@ -279,6 +279,14 @@ export function deleteEmailById(token, id) {
   })
 }
 
+export function deleteEmailsByIds(token, emailIds) {
+  return request('/v1/emails/bulk-delete', {
+    method: 'POST',
+    token,
+    body: { emailIds },
+  })
+}
+
 export function getInboxByAddress(token, emailAddress, options = {}) {
   return request(withQuery(`/v1/inboxes/${encodeURIComponent(emailAddress)}`, {
     limit: options.limit,

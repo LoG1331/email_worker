@@ -2774,7 +2774,7 @@
           "Emails"
         ],
         "summary": "List emails",
-        "description": "Global admins can list all emails with scope=system. Any caller can force scope=registered to only see emails whose mailbox is both permitted and registered in email_registers for that user. domain/address filters narrow the result set.",
+        "description": "Global admins can list all emails with scope=system. Any caller can force scope=registered to only see emails whose mailbox is both permitted and registered in email_registers for that user. domain/address/search filters narrow the result set. search supports multiple terms and checks subject, body, stored metadata and raw_mime when available.",
         "security": [
           {
             "bearerAuth": []
@@ -2808,6 +2808,13 @@
           {
             "in": "query",
             "name": "address",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
             "schema": {
               "type": "string"
             }
@@ -2867,6 +2874,101 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/emails/bulk-delete": {
+      "post": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "Delete emails in bulk",
+        "description": "Deletes up to 200 emails in one request. Normal users must have write access to each selected email. The response includes deletedIds as well as missingIds and deniedIds so clients can reconcile stale selections.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyHeader": []
+          },
+          {
+            "apiKeyAuthScheme": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "emailIds"
+                ],
+                "properties": {
+                  "emailIds": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bulk delete result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "deleted": {
+                      "type": "integer"
+                    },
+                    "requestedCount": {
+                      "type": "integer"
+                    },
+                    "deletedIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "missingIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "deniedIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "requestId": {
+                      "$ref": "#/components/schemas/RequestId"
+                    }
+                  }
                 }
               }
             }

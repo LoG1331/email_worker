@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { Plus, Search, Trash2 } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import {
   createEmailRegister,
   createRandomEmailRegister,
+  deleteEmailsByIds,
   deleteEmailById,
   deleteEmailRegister,
   getEmailById,
@@ -19,6 +20,7 @@ import { useCursorPager } from '../hooks/useCursorPager.js'
 
 const DEFAULT_FILTERS = {
   address: '',
+  search: '',
   limit: 50,
 }
 
@@ -48,6 +50,9 @@ export default function EmailsView({ token }) {
   const [includeRawMime, setIncludeRawMime] = useState(false)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [deletingEmail, setDeletingEmail] = useState(false)
+  const [selectedEmailIds, setSelectedEmailIds] = useState([])
+  const [deletingSelectedEmails, setDeletingSelectedEmails] = useState(false)
+  const deferredSearch = useDeferredValue(filters.search)
   const emailPager = useCursorPager()
 
   const selectedMailbox = useMemo(
@@ -136,10 +141,12 @@ export default function EmailsView({ token }) {
     try {
       const response = await listRegisteredEmails(token, {
         address: filters.address,
+        search: deferredSearch,
         limit: filters.limit,
         cursor: emailPager.cursor,
       })
       emailPager.sync(response)
+      setSelectedEmailIds((current) => current.filter((id) => response.emails.some((email) => email.id === id)))
       setListing({
         loading: false,
         emails: response.emails,
@@ -165,6 +172,7 @@ export default function EmailsView({ token }) {
 
   useEffect(() => {
     if (!registrations.length) {
+      setSelectedEmailIds([])
       setListing({
         loading: false,
         emails: [],
@@ -176,7 +184,7 @@ export default function EmailsView({ token }) {
 
     void loadList()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [emailPager.cursor, filters.address, filters.limit, registrations.length, token])
+  }, [deferredSearch, emailPager.cursor, filters.address, filters.limit, registrations.length, token])
 
   const refreshNow = useAutoRefresh(async () => {
     if (!registrations.length) {
@@ -278,6 +286,7 @@ export default function EmailsView({ token }) {
     try {
       await deleteEmailById(token, selectedEmailId)
       toast.success('Đã xóa email')
+      setSelectedEmailIds((current) => current.filter((id) => id !== selectedEmailId))
       setSelectedEmail(null)
       setSelectedEmailId(null)
       const response = await loadList({
@@ -294,6 +303,72 @@ export default function EmailsView({ token }) {
       setDeletingEmail(false)
     }
   }
+
+  async function handleDeleteSelectedEmails() {
+    if (!selectedEmailIds.length) {
+      return
+    }
+
+    setDeletingSelectedEmails(true)
+
+    try {
+      const response = await deleteEmailsByIds(token, selectedEmailIds)
+      const deletedIds = Array.isArray(response.deletedIds) ? response.deletedIds : []
+      const deletedCount = Number(response.deleted || deletedIds.length || 0)
+
+      if (deletedCount > 0) {
+        toast.success(`Đã xóa ${deletedCount} email`)
+      }
+
+      if (response.missingIds?.length || response.deniedIds?.length) {
+        toast.error(deletedCount ? 'Một phần email không còn khả dụng để xóa.' : 'Không thể xóa các email đã chọn.')
+      }
+
+      if (selectedEmailId && deletedIds.includes(selectedEmailId)) {
+        setSelectedEmail(null)
+        setSelectedEmailId(null)
+      }
+
+      setSelectedEmailIds([])
+      const listResponse = await loadList({
+        showLoading: false,
+        showError: false,
+      })
+      if (!listResponse?.count && emailPager.hasPrev) {
+        emailPager.goPrev()
+      }
+      await loadRegistrations({ showError: false })
+    } catch (error) {
+      toast.error(formatApiError(error))
+    } finally {
+      setDeletingSelectedEmails(false)
+    }
+  }
+
+  function handleToggleEmailSelection(emailId, checked) {
+    setSelectedEmailIds((current) => {
+      if (!checked) {
+        return current.filter((id) => id !== emailId)
+      }
+
+      if (current.includes(emailId)) {
+        return current
+      }
+
+      return [...current, emailId]
+    })
+  }
+
+  function handleTogglePageSelection(checked) {
+    if (!checked) {
+      setSelectedEmailIds([])
+      return
+    }
+
+    setSelectedEmailIds(listing.emails.map((email) => email.id))
+  }
+
+  const allVisibleSelected = listing.emails.length > 0 && listing.emails.every((email) => selectedEmailIds.includes(email.id))
 
   function handleCloseEmailModal() {
     setSelectedEmailId(null)
@@ -446,13 +521,43 @@ export default function EmailsView({ token }) {
         total={listing.count || listing.emails.length}
         emails={listing.emails}
         selectedEmailId={selectedEmailId}
+        selectedEmailIds={selectedEmailIds}
+        selectable
         loading={listing.loading}
         onOpenEmail={setSelectedEmailId}
+        onToggleEmailSelection={handleToggleEmailSelection}
+        onTogglePageSelection={handleTogglePageSelection}
         emptyTitle="Chưa có mail để hiển thị"
         emptyDescription="Đăng ký hộp thư trước, hoặc chọn lại bộ lọc nếu bạn đang xem một địa chỉ cụ thể."
         action={(
           <div className="flex flex-wrap items-center justify-end gap-2">
+            <label className="min-w-[220px] grow sm:max-w-[18rem]">
+              <span className="sr-only">Tìm kiếm email</span>
+              <div className="flex min-h-[40px] items-center gap-2 rounded-[0.95rem] border border-white/70 bg-white/88 px-3.5">
+                <Search className="h-4 w-4 shrink-0 text-[var(--muted)]" />
+                <Input
+                  className="min-h-0 flex-1 border-0 bg-transparent px-0 py-0 text-sm shadow-none outline-none"
+                  value={filters.search}
+                  onChange={(event) => {
+                    emailPager.reset()
+                    setFilters((current) => ({ ...current, search: event.target.value }))
+                  }}
+                  placeholder="Tìm subject, body, header..."
+                />
+              </div>
+            </label>
+            {filters.search ? <Badge tone="warning">{filters.search}</Badge> : null}
+            {selectedEmailIds.length ? <Badge tone="success">{selectedEmailIds.length} đã chọn</Badge> : null}
             <Badge tone="accent">{listing.emails.length} mail</Badge>
+            <Button type="button" size="sm" variant="ghost" onClick={() => handleTogglePageSelection(true)} disabled={!listing.emails.length || allVisibleSelected}>
+              Select all
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => handleTogglePageSelection(false)} disabled={!selectedEmailIds.length}>
+              Bỏ chọn
+            </Button>
+            <Button type="button" size="sm" variant="danger" icon={Trash2} loading={deletingSelectedEmails} onClick={handleDeleteSelectedEmails} disabled={!selectedEmailIds.length}>
+              Xóa đã chọn
+            </Button>
             {filters.address ? <Badge tone="neutral">{filters.address}</Badge> : null}
             <CursorPagination
               page={emailPager.page}

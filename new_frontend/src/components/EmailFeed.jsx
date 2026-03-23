@@ -139,12 +139,19 @@ export function EmailFeedList({
   total,
   emails,
   selectedEmailId,
+  selectedEmailIds = [],
+  selectable = false,
   loading,
   onOpenEmail,
+  onToggleEmailSelection,
+  onTogglePageSelection,
   emptyTitle,
   emptyDescription,
   action,
 }) {
+  const selectedCount = selectedEmailIds.length
+  const allVisibleSelected = selectable && emails.length > 0 && emails.every((email) => selectedEmailIds.includes(email.id))
+
   return (
     <Panel
       eyebrow="Hộp thư"
@@ -161,7 +168,25 @@ export function EmailFeedList({
     >
       {emails.length ? (
         <div className="overflow-hidden rounded-[1.5rem] border border-[var(--line)] bg-white/65">
-          <div className="hidden grid-cols-[minmax(0,1.2fr)_minmax(220px,0.68fr)_180px] items-center gap-4 border-b border-[var(--line)] bg-[rgba(29,42,42,0.04)] px-5 py-3 text-[11px] font-black uppercase tracking-[0.2em] text-[var(--muted)] lg:grid">
+          <div
+            className={cn(
+              'hidden items-center gap-4 border-b border-[var(--line)] bg-[rgba(29,42,42,0.04)] px-5 py-3 text-[11px] font-black uppercase tracking-[0.2em] text-[var(--muted)] lg:grid',
+              selectable
+                ? 'lg:grid-cols-[52px_minmax(0,1.2fr)_minmax(220px,0.68fr)_180px]'
+                : 'lg:grid-cols-[minmax(0,1.2fr)_minmax(220px,0.68fr)_180px]',
+            )}
+          >
+            {selectable ? (
+              <div className="flex items-center justify-center">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border border-[var(--line)] accent-[var(--accent)]"
+                  checked={allVisibleSelected}
+                  onChange={(event) => onTogglePageSelection?.(event.target.checked)}
+                  aria-label={allVisibleSelected ? 'Bỏ chọn toàn bộ email trong trang' : 'Chọn toàn bộ email trong trang'}
+                />
+              </div>
+            ) : null}
             <p>Email</p>
             <p>Người gửi / Người nhận</p>
             <p className="text-right">Thời gian nhận</p>
@@ -174,7 +199,10 @@ export function EmailFeedList({
                   key={email.id}
                   email={email}
                   isActive={selectedEmailId === email.id}
+                  isChecked={selectedEmailIds.includes(email.id)}
+                  selectable={selectable}
                   onOpenEmail={onOpenEmail}
+                  onToggleSelection={onToggleEmailSelection}
                 />
               )
             })}
@@ -184,58 +212,93 @@ export function EmailFeedList({
         <div className="rounded-[1.5rem] border border-dashed border-[var(--line)] bg-white/50 px-6 py-12 text-center">
           <p className="font-display text-2xl text-[var(--ink)]">{emptyTitle}</p>
           <p className="mt-3 text-sm leading-6 text-[var(--muted)]">{emptyDescription}</p>
+          {selectable && selectedCount ? (
+            <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+              {selectedCount} email đang được chọn sẽ tự bỏ khi danh sách trống.
+            </p>
+          ) : null}
         </div>
       )}
     </Panel>
   )
 }
 
-const EmailFeedRow = memo(function EmailFeedRow({ email, isActive, onOpenEmail }) {
+const EmailFeedRow = memo(function EmailFeedRow({
+  email,
+  isActive,
+  isChecked,
+  selectable,
+  onOpenEmail,
+  onToggleSelection,
+}) {
   return (
-    <button
-      type="button"
-      onClick={() => onOpenEmail(email.id)}
+    <div
       className={cn(
-        'grid w-full gap-4 border-b border-[var(--line)] px-4 py-4 text-left transition-colors last:border-none sm:px-5',
-        'lg:grid-cols-[minmax(0,1.2fr)_minmax(220px,0.68fr)_180px] lg:items-center',
+        'grid gap-3 border-b border-[var(--line)] last:border-none',
+        selectable ? 'grid-cols-[auto_minmax(0,1fr)]' : 'grid-cols-1',
         isActive
           ? 'bg-[linear-gradient(135deg,rgba(19,93,102,0.12),rgba(32,130,141,0.06))]'
-          : 'bg-transparent hover:bg-[rgba(19,93,102,0.05)]',
+          : isChecked
+            ? 'bg-[rgba(19,93,102,0.06)]'
+            : 'bg-transparent',
       )}
     >
-      <div className="min-w-0 space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="font-semibold text-[var(--ink)]">{truncate(email.subject || '(No Subject)', 96)}</p>
-          {email.groupCount ? <Badge tone="accent">{email.groupCount} nhóm</Badge> : null}
-          <Badge tone="neutral" className="lg:hidden">{email.domain}</Badge>
+      {selectable ? (
+        <div className="flex items-start justify-center px-3 pt-4 sm:px-4">
+          <input
+            type="checkbox"
+            className="mt-1 h-4 w-4 rounded border border-[var(--line)] accent-[var(--accent)]"
+            checked={Boolean(isChecked)}
+            onChange={(event) => onToggleSelection?.(email.id, event.target.checked)}
+            aria-label={`Chọn email ${email.id}`}
+          />
         </div>
-        <p className="text-sm leading-6 text-[var(--muted)]">{getEmailPreview(email)}</p>
-      </div>
+      ) : null}
 
-      <div className="grid gap-2 text-sm text-[var(--ink)]">
-        <div className="flex items-start gap-2">
-          <UserRound className="mt-0.5 h-4 w-4 text-[var(--muted)]" />
-          <div className="min-w-0">
-            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[var(--muted)]">Người gửi</p>
-            <p className="truncate font-medium">{getSenderLabel(email)}</p>
+      <button
+        type="button"
+        onClick={() => onOpenEmail(email.id)}
+        className={cn(
+          'grid w-full gap-4 px-4 py-4 text-left transition-colors hover:bg-[rgba(19,93,102,0.05)] sm:px-5',
+          selectable ? 'pl-0 sm:pl-0' : '',
+          'lg:grid-cols-[minmax(0,1.2fr)_minmax(220px,0.68fr)_180px] lg:items-center',
+        )}
+      >
+        <div className="min-w-0 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="font-semibold text-[var(--ink)]">{truncate(email.subject || '(No Subject)', 96)}</p>
+            {email.groupCount ? <Badge tone="accent">{email.groupCount} nhóm</Badge> : null}
+            {isChecked ? <Badge tone="success">Đã chọn</Badge> : null}
+            <Badge tone="neutral" className="lg:hidden">{email.domain}</Badge>
+          </div>
+          <p className="text-sm leading-6 text-[var(--muted)]">{getEmailPreview(email)}</p>
+        </div>
+
+        <div className="grid gap-2 text-sm text-[var(--ink)]">
+          <div className="flex items-start gap-2">
+            <UserRound className="mt-0.5 h-4 w-4 text-[var(--muted)]" />
+            <div className="min-w-0">
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[var(--muted)]">Người gửi</p>
+              <p className="truncate font-medium">{getSenderLabel(email)}</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-2">
+            <Send className="mt-0.5 h-4 w-4 text-[var(--muted)]" />
+            <div className="min-w-0">
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[var(--muted)]">Người nhận</p>
+              <p className="truncate font-medium">{email.to}</p>
+            </div>
           </div>
         </div>
-        <div className="flex items-start gap-2">
-          <Send className="mt-0.5 h-4 w-4 text-[var(--muted)]" />
-          <div className="min-w-0">
-            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[var(--muted)]">Người nhận</p>
-            <p className="truncate font-medium">{email.to}</p>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-[var(--muted)] lg:justify-end">
+          <Badge tone="neutral" className="hidden lg:inline-flex">{email.domain}</Badge>
+          <div className="flex items-center gap-2">
+            <MailOpen className="h-4 w-4 text-[var(--muted)]" />
+            <p className="font-medium">{formatDateTime(email.receivedAt)}</p>
           </div>
         </div>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-[var(--muted)] lg:justify-end">
-        <Badge tone="neutral" className="hidden lg:inline-flex">{email.domain}</Badge>
-        <div className="flex items-center gap-2">
-          <MailOpen className="h-4 w-4 text-[var(--muted)]" />
-          <p className="font-medium">{formatDateTime(email.receivedAt)}</p>
-        </div>
-      </div>
-    </button>
+      </button>
+    </div>
   )
 })

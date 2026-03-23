@@ -134,13 +134,13 @@ export default function AppShell({
         </aside>
       </div>
 
-      <div className="mx-auto flex min-h-screen w-full max-w-[1680px] flex-col gap-4 px-3 py-3 sm:px-5 lg:flex-row lg:gap-4 lg:px-6 lg:py-6">
-        <aside className="panel-strong relative hidden overflow-hidden rounded-[1.45rem] p-2.5 lg:sticky lg:top-6 lg:flex lg:h-[calc(100vh-3rem)] lg:w-[198px]">
-          <div className="relative flex h-full flex-col gap-2">
-            <section className="rounded-[1rem] border border-[var(--line)] bg-white/82 p-3">
+      <div className="flex min-h-screen w-full flex-col gap-4 px-3 py-3 sm:px-5 lg:flex-row lg:gap-5 lg:px-6 lg:py-6 xl:px-8 2xl:px-10">
+        <aside className="panel-strong relative hidden shrink-0 overflow-hidden rounded-[1.45rem] p-2.5 lg:sticky lg:top-6 lg:flex lg:h-[calc(100vh-3rem)] lg:w-[232px] xl:w-[248px]">
+          <div className="relative flex h-full min-w-0 flex-col gap-2">
+            <section className="min-w-0 rounded-[1rem] border border-[var(--line)] bg-white/82 p-3">
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--accent)]">Mail Console</p>
               <div className="mt-2 flex items-start justify-between gap-2">
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-[var(--ink)]">{account.displayName || account.username}</p>
                   <p className="truncate text-[11px] text-[var(--muted)]">@{account.username}</p>
                 </div>
@@ -161,15 +161,15 @@ export default function AppShell({
                     key={item.id}
                     onClick={() => onNavigate(item.id)}
                     className={cn(
-                      'flex items-center justify-between gap-2 rounded-[0.95rem] border px-2.5 py-2 text-left transition-all',
+                      'flex min-w-0 items-center justify-between gap-2 rounded-[0.95rem] border px-3 py-2.5 text-left transition-all',
                       isActive
                         ? 'border-[rgba(19,93,102,0.12)] bg-[linear-gradient(135deg,rgba(19,93,102,0.14),rgba(19,93,102,0.06))] text-[var(--accent-strong)] shadow-[0_18px_28px_-24px_rgba(19,93,102,0.58)]'
                         : 'border-transparent text-[var(--muted)] hover:border-[var(--line)] hover:bg-white/70 hover:text-[var(--ink)]',
                     )}
                     >
-                      <span className="flex items-center gap-2">
+                      <span className="flex min-w-0 items-center gap-2">
                         <item.icon className="h-3.5 w-3.5" />
-                        <span className="text-[12px] font-semibold">{item.label}</span>
+                        <span className="truncate text-[12px] font-semibold">{item.label}</span>
                       </span>
                       {item.badge ? <Badge tone={isActive ? 'accent' : 'neutral'}>{item.badge}</Badge> : null}
                     </button>

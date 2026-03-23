@@ -1,7 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react'
-import { RotateCcw, Search } from 'lucide-react'
+import { RotateCcw, Search, Trash2 } from 'lucide-react'
 import { toast } from 'react-hot-toast'
-import { deleteEmailById, getEmailById, listSystemEmails } from '../lib/api.js'
+import { deleteEmailsByIds, deleteEmailById, getEmailById, listSystemEmails } from '../lib/api.js'
 import { cn, formatApiError } from '../lib/format.js'
 import { EmailDetailModal, EmailFeedList } from '../components/EmailFeed.jsx'
 import { AutoRefreshButton, Badge, Button, CursorPagination, Input, Panel } from '../components/ui.jsx'
@@ -11,6 +11,7 @@ import { useCursorPager } from '../hooks/useCursorPager.js'
 const DEFAULT_FILTERS = {
   domain: '',
   address: '',
+  search: '',
   limit: 50,
 }
 
@@ -47,9 +48,12 @@ export default function AdminEmailsView({ token }) {
   const [includeRawMime, setIncludeRawMime] = useState(false)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [deletingEmail, setDeletingEmail] = useState(false)
+  const [selectedEmailIds, setSelectedEmailIds] = useState([])
+  const [deletingSelectedEmails, setDeletingSelectedEmails] = useState(false)
   const deferredAddress = useDeferredValue(filters.address)
   const deferredDomain = useDeferredValue(filters.domain)
-  const activeFilterCount = Number(Boolean(filters.address)) + Number(Boolean(filters.domain))
+  const deferredSearch = useDeferredValue(filters.search)
+  const activeFilterCount = Number(Boolean(filters.address)) + Number(Boolean(filters.domain)) + Number(Boolean(filters.search))
   const visibleDomainOptions = useMemo(() => buildVisibleDomainOptions(listing.emails), [listing.emails])
   const emailPager = useCursorPager()
 
@@ -105,10 +109,12 @@ export default function AdminEmailsView({ token }) {
       const response = await listSystemEmails(token, {
         address: deferredAddress,
         domain: deferredDomain,
+        search: deferredSearch,
         limit: filters.limit,
         cursor: emailPager.cursor,
       })
       emailPager.sync(response)
+      setSelectedEmailIds((current) => current.filter((id) => response.emails.some((email) => email.id === id)))
       setListing({
         loading: false,
         emails: response.emails,
@@ -130,7 +136,7 @@ export default function AdminEmailsView({ token }) {
   useEffect(() => {
     void loadList()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deferredAddress, deferredDomain, emailPager.cursor, filters.limit, token])
+  }, [deferredAddress, deferredDomain, deferredSearch, emailPager.cursor, filters.limit, token])
 
   const refreshNow = useAutoRefresh(async () => {
     await loadList({
@@ -149,6 +155,7 @@ export default function AdminEmailsView({ token }) {
     try {
       await deleteEmailById(token, selectedEmailId)
       toast.success('Đã xóa email')
+      setSelectedEmailIds((current) => current.filter((id) => id !== selectedEmailId))
       setSelectedEmail(null)
       setSelectedEmailId(null)
       const response = await loadList({
@@ -162,6 +169,46 @@ export default function AdminEmailsView({ token }) {
       toast.error(formatApiError(error))
     } finally {
       setDeletingEmail(false)
+    }
+  }
+
+  async function handleDeleteSelectedEmails() {
+    if (!selectedEmailIds.length) {
+      return
+    }
+
+    setDeletingSelectedEmails(true)
+
+    try {
+      const response = await deleteEmailsByIds(token, selectedEmailIds)
+      const deletedIds = Array.isArray(response.deletedIds) ? response.deletedIds : []
+      const deletedCount = Number(response.deleted || deletedIds.length || 0)
+
+      if (deletedCount > 0) {
+        toast.success(`Đã xóa ${deletedCount} email`)
+      }
+
+      if (response.missingIds?.length || response.deniedIds?.length) {
+        toast.error(deletedCount ? 'Một phần email không còn khả dụng để xóa.' : 'Không thể xóa các email đã chọn.')
+      }
+
+      if (selectedEmailId && deletedIds.includes(selectedEmailId)) {
+        setSelectedEmail(null)
+        setSelectedEmailId(null)
+      }
+
+      setSelectedEmailIds([])
+      const listResponse = await loadList({
+        showLoading: false,
+        showError: false,
+      })
+      if (!listResponse?.count && emailPager.hasPrev) {
+        emailPager.goPrev()
+      }
+    } catch (error) {
+      toast.error(formatApiError(error))
+    } finally {
+      setDeletingSelectedEmails(false)
     }
   }
 
@@ -182,6 +229,31 @@ export default function AdminEmailsView({ token }) {
     }))
     emailPager.reset()
   }
+
+  function handleToggleEmailSelection(emailId, checked) {
+    setSelectedEmailIds((current) => {
+      if (!checked) {
+        return current.filter((id) => id !== emailId)
+      }
+
+      if (current.includes(emailId)) {
+        return current
+      }
+
+      return [...current, emailId]
+    })
+  }
+
+  function handleTogglePageSelection(checked) {
+    if (!checked) {
+      setSelectedEmailIds([])
+      return
+    }
+
+    setSelectedEmailIds(listing.emails.map((email) => email.id))
+  }
+
+  const allVisibleSelected = listing.emails.length > 0 && listing.emails.every((email) => selectedEmailIds.includes(email.id))
 
   return (
     <div className="space-y-5">
@@ -205,7 +277,7 @@ export default function AdminEmailsView({ token }) {
 
           <div className="rounded-[1.3rem] border border-[var(--line)] bg-[linear-gradient(145deg,rgba(255,255,255,0.95),rgba(255,245,239,0.9))] p-3 sm:p-3.5">
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
-              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_220px]">
                 <label className="min-w-0">
                   <span className="sr-only">Địa chỉ nhận</span>
                   <div className="flex min-h-[42px] items-center gap-2 rounded-[0.95rem] border border-white/70 bg-white/88 px-3.5">
@@ -220,6 +292,19 @@ export default function AdminEmailsView({ token }) {
                       placeholder="Địa chỉ nhận"
                     />
                   </div>
+                </label>
+
+                <label className="min-w-0">
+                  <span className="sr-only">Search term</span>
+                  <Input
+                    className={COMPACT_INPUT_CLASS}
+                    value={filters.search}
+                    onChange={(event) => {
+                      emailPager.reset()
+                      setFilters((current) => ({ ...current, search: event.target.value }))
+                    }}
+                    placeholder="Tìm subject, body, header..."
+                  />
                 </label>
 
                 <label className="min-w-0">
@@ -239,6 +324,7 @@ export default function AdminEmailsView({ token }) {
               <div className="flex flex-wrap items-center gap-2 xl:justify-end">
                 <Badge tone="neutral">{listing.emails.length} dòng</Badge>
                 {filters.address ? <Badge tone="accent">{filters.address}</Badge> : null}
+                {filters.search ? <Badge tone="warning">{filters.search}</Badge> : null}
                 {filters.domain ? <Badge tone="neutral">{filters.domain}</Badge> : null}
                 <Button type="button" size="sm" variant="ghost" icon={RotateCcw} onClick={clearFilters} disabled={!activeFilterCount}>
                   Xóa lọc
@@ -289,8 +375,12 @@ export default function AdminEmailsView({ token }) {
         total={listing.count || listing.emails.length}
         emails={listing.emails}
         selectedEmailId={selectedEmailId}
+        selectedEmailIds={selectedEmailIds}
+        selectable
         loading={listing.loading}
         onOpenEmail={setSelectedEmailId}
+        onToggleEmailSelection={handleToggleEmailSelection}
+        onTogglePageSelection={handleTogglePageSelection}
         emptyTitle="Chưa có mail hệ thống"
         emptyDescription="Thử bỏ bộ lọc người nhận/domain nếu feed đang rỗng, hoặc chờ worker forward thêm mail mới vào server."
         action={(
@@ -298,7 +388,18 @@ export default function AdminEmailsView({ token }) {
             <Badge tone="warning">Phạm vi hệ thống</Badge>
             {filters.domain ? <Badge tone="neutral">{filters.domain}</Badge> : null}
             {filters.address ? <Badge tone="accent">{filters.address}</Badge> : null}
+            {filters.search ? <Badge tone="warning">{filters.search}</Badge> : null}
+            {selectedEmailIds.length ? <Badge tone="success">{selectedEmailIds.length} đã chọn</Badge> : null}
             <Badge tone="accent">{listing.emails.length} mail</Badge>
+            <Button type="button" size="sm" variant="ghost" onClick={() => handleTogglePageSelection(true)} disabled={!listing.emails.length || allVisibleSelected}>
+              Select all
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => handleTogglePageSelection(false)} disabled={!selectedEmailIds.length}>
+              Bỏ chọn
+            </Button>
+            <Button type="button" size="sm" variant="danger" icon={Trash2} loading={deletingSelectedEmails} onClick={handleDeleteSelectedEmails} disabled={!selectedEmailIds.length}>
+              Xóa đã chọn
+            </Button>
             <CursorPagination
               page={emailPager.page}
               count={listing.emails.length}

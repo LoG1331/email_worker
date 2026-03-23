@@ -1,9 +1,11 @@
 import express from 'express';
+import { z } from 'zod';
 import { ensureDomainPermission, ensureMailboxPermission, hasGlobalPermission } from '../services/account-service.mjs';
 import { asyncHandler } from '../utils/async-handler.mjs';
 import { parseEmailAddress } from '../utils/email.mjs';
 import { HttpError, parsePagination } from '../utils/http.mjs';
 import {
+    deleteEmailsByIds,
     deleteEmailById,
     deleteEmailsByRecipient,
     assertRegisteredMailboxPermission,
@@ -12,6 +14,10 @@ import {
     listEmails
 } from '../services/email-service.mjs';
 
+const emailDeleteBatchSchema = z.object({
+    emailIds: z.array(z.union([z.number().int().positive(), z.string().min(1)])).min(1).max(200)
+});
+
 export function createEmailsRouter(config) {
     const router = express.Router();
 
@@ -19,6 +25,7 @@ export function createEmailsRouter(config) {
         const requestedDomain = req.query.domain ? String(req.query.domain) : '';
         const requestedAddress = req.query.address ? String(req.query.address) : '';
         const requestedScope = req.query.scope ? String(req.query.scope) : '';
+        const requestedSearch = req.query.search ? String(req.query.search) : '';
 
         if (requestedScope && requestedScope !== 'registered' && requestedScope !== 'system') {
             throw new HttpError(400, 'Invalid scope filter');
@@ -54,6 +61,7 @@ export function createEmailsRouter(config) {
             cursor: req.query.cursor ? String(req.query.cursor) : '',
             domain: requestedDomain,
             address: requestedAddress,
+            search: requestedSearch,
             scope: requestedScope
         });
 
@@ -62,6 +70,26 @@ export function createEmailsRouter(config) {
             emails: result.emails,
             nextCursor: result.nextCursor,
             hasMore: result.hasMore,
+            requestId: req.requestId
+        });
+    }));
+
+    router.post('/bulk-delete', asyncHandler(async (req, res) => {
+        const payload = emailDeleteBatchSchema.parse(req.body);
+        const lookup = await getAuthorizedEmailsByIds(config, req.auth, payload.emailIds, {
+            permission: 'write'
+        });
+        const deletableEmailIds = lookup.emails.map(email => email.id);
+        const result = deletableEmailIds.length
+            ? await deleteEmailsByIds(config, deletableEmailIds)
+            : { success: true, deleted: 0 };
+
+        res.json({
+            ...result,
+            requestedCount: payload.emailIds.length,
+            deletedIds: deletableEmailIds,
+            missingIds: lookup.missingIds,
+            deniedIds: lookup.deniedIds,
             requestId: req.requestId
         });
     }));

@@ -40,6 +40,28 @@ function normalizeStartTime(value) {
     return parsed.toISOString();
 }
 
+function normalizeEmailSearch(value) {
+    if (value === undefined || value === null) {
+        return '';
+    }
+
+    return String(value).trim();
+}
+
+function splitEmailSearchTerms(value) {
+    const normalized = normalizeEmailSearch(value);
+    if (!normalized) {
+        return [];
+    }
+
+    return [...new Set(
+        normalized
+            .split(/\s+/)
+            .map(term => term.trim())
+            .filter(Boolean)
+    )];
+}
+
 function normalizePruneOlderThanDays(value) {
     const numericValue = Number.parseInt(String(value ?? ''), 10);
     if (!Number.isInteger(numericValue) || numericValue < 0) {
@@ -233,6 +255,50 @@ function uniqueNumericIds(values) {
             .map(value => Number(value))
             .filter(value => Number.isInteger(value) && value > 0)
     )];
+}
+
+function escapeSqlLikePattern(value) {
+    return String(value).replace(/[\\%_]/g, '\\$&');
+}
+
+function buildEmailSearchSql(search, alias = 'e') {
+    const terms = splitEmailSearchTerms(search);
+    if (!terms.length) {
+        return {
+            clause: '',
+            values: []
+        };
+    }
+    const searchableColumns = [
+        `${alias}.subject`,
+        `${alias}.text_body`,
+        `${alias}.html_body`,
+        `${alias}.envelope_from`,
+        `${alias}.sender_json`,
+        `${alias}.message_id`,
+        `${alias}.recipient_address`,
+        `${alias}.local_part`,
+        `${alias}.recipient_domain`,
+        `${alias}.worker_name`,
+        `${alias}.source_domain`,
+        `CAST(${alias}.raw_mime AS TEXT)`
+    ];
+
+    const termClauses = [];
+    const values = [];
+
+    for (const term of terms) {
+        const pattern = `%${escapeSqlLikePattern(term)}%`;
+        termClauses.push(
+            `(${searchableColumns.map(column => `${column} LIKE ? ESCAPE '\\' COLLATE NOCASE`).join(' OR ')})`
+        );
+        values.push(...searchableColumns.map(() => pattern));
+    }
+
+    return {
+        clause: `(${termClauses.join(' AND ')})`,
+        values
+    };
 }
 
 async function reindexGroupPositionsTx(db, groupIds) {
@@ -641,6 +707,12 @@ export async function listEmails(config, auth, filters = {}) {
         values.push(parsedAddress.email);
     }
 
+    const searchClause = buildEmailSearchSql(filters.search, 'e');
+    if (searchClause.clause) {
+        conditions.push(searchClause.clause);
+        values.push(...searchClause.values);
+    }
+
     if (!bypassVisibility) {
         const visibility = buildEmailVisibilitySql(auth?.userId || 0, 'view', {
             requireRegistration: true
@@ -816,13 +888,7 @@ export async function getAuthorizedEmailsByIds(config, auth, emailIds, options =
 
 export async function deleteEmailById(config, id) {
     const emailId = parseEmailId(id);
-    await withTransaction(config, async (db) => {
-        const affectedGroupIds = await getAffectedGroupIdsForEmailDeleteTx(db, 'e.id = ?', [emailId]);
-        await db.run(`DELETE FROM emails WHERE id = ?`, [emailId]);
-        await reindexGroupPositionsTx(db, affectedGroupIds);
-        await touchGroupsTx(db, affectedGroupIds);
-    });
-    return { success: true };
+    return deleteEmailsByIds(config, [emailId]);
 }
 
 export async function deleteEmailsByRecipient(config, emailAddress) {
@@ -838,6 +904,34 @@ export async function deleteEmailsByRecipient(config, emailAddress) {
         await touchGroupsTx(db, affectedGroupIds);
     });
     return { success: true };
+}
+
+export async function deleteEmailsByIds(config, emailIds) {
+    const normalizedEmailIds = normalizeEmailIds(emailIds);
+
+    const result = await withTransaction(config, async (db) => {
+        const affectedGroupIds = await getAffectedGroupIdsForEmailDeleteTx(
+            db,
+            `e.id IN (${buildInPlaceholders(normalizedEmailIds)})`,
+            normalizedEmailIds
+        );
+        const deleteResult = await db.run(
+            `
+                DELETE FROM emails
+                WHERE id IN (${buildInPlaceholders(normalizedEmailIds)})
+            `,
+            normalizedEmailIds
+        );
+        await reindexGroupPositionsTx(db, affectedGroupIds);
+        await touchGroupsTx(db, affectedGroupIds);
+
+        return deleteResult;
+    });
+
+    return {
+        success: true,
+        deleted: result?.changes || 0
+    };
 }
 
 export async function pruneStoredRawMime(config) {
