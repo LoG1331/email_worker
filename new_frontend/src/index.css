@@ -170,6 +170,61 @@
       0 28px 56px -42px rgba(16, 32, 33, 0.42);
   }
 
+  .email-html-snippet {
+    max-height: 7rem;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 0.92rem;
+    line-height: 1.5;
+    pointer-events: none;
+  }
+
+  .email-html-snippet * {
+    max-width: 100% !important;
+    color: inherit !important;
+    font: inherit !important;
+    background: transparent !important;
+  }
+
+  .email-html-snippet img,
+  .email-html-snippet video,
+  .email-html-snippet audio,
+  .email-html-snippet canvas,
+  .email-html-snippet svg,
+  .email-html-snippet form,
+  .email-html-snippet button,
+  .email-html-snippet input,
+  .email-html-snippet textarea,
+  .email-html-snippet select {
+    display: none !important;
+  }
+
+  .email-html-snippet p,
+  .email-html-snippet div,
+  .email-html-snippet section,
+  .email-html-snippet article,
+  .email-html-snippet ul,
+  .email-html-snippet ol,
+  .email-html-snippet li,
+  .email-html-snippet blockquote,
+  .email-html-snippet h1,
+  .email-html-snippet h2,
+  .email-html-snippet h3,
+  .email-html-snippet h4,
+  .email-html-snippet h5,
+  .email-html-snippet h6 {
+    margin: 0 0 0.3rem 0 !important;
+  }
+
+  .email-html-snippet table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  .email-html-snippet a {
+    text-decoration: none !important;
+  }
+
   .muted-card {
     background: linear-gradient(180deg, rgba(239, 231, 218, 0.54), rgba(255, 255, 255, 0.76));
     border: 1px solid var(--line);

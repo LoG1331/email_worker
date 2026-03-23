@@ -572,6 +572,7 @@ export default function EmailsView({ token }) {
       />
 
       <EmailDetailModal
+        key={selectedEmailId || 'email-detail-modal'}
         open={Boolean(selectedEmailId)}
         email={selectedEmail}
         loadingDetail={loadingDetail}

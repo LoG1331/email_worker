@@ -1,8 +1,96 @@
-import { memo, useEffect } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { MailOpen, Send, Trash2, UserRound, X } from 'lucide-react'
-import { getEmailPreview, getSenderLabel } from '../lib/email-feed.js'
+import { getEmailBodyText, getEmailPreview, getSenderLabel } from '../lib/email-feed.js'
 import { cn, formatDateTime, truncate } from '../lib/format.js'
 import { Badge, Button, Checkbox, CodeBlock, Panel } from './ui.jsx'
+
+function buildEmailHtmlPreviewDoc(html) {
+  const source = String(html || '').trim()
+  if (!source) {
+    return ''
+  }
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root { color-scheme: light; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 20px;
+        background: #fffdfa;
+        color: #182526;
+        font: 14px/1.6 Manrope, system-ui, sans-serif;
+        overflow-wrap: anywhere;
+      }
+      img, video, iframe, table {
+        max-width: 100%;
+      }
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+    </style>
+  </head>
+  <body>${source}</body>
+</html>`
+}
+
+function sanitizeEmailHtmlPreview(html) {
+  const source = String(html || '').trim()
+  if (!source) {
+    return ''
+  }
+
+  if (typeof window === 'undefined' || typeof window.DOMParser !== 'function') {
+    return source
+  }
+
+  const document = new window.DOMParser().parseFromString(source, 'text/html')
+
+  document.querySelectorAll('script, style, iframe, object, embed, link, meta, base').forEach((node) => {
+    node.remove()
+  })
+
+  document.querySelectorAll('*').forEach((node) => {
+    Array.from(node.attributes).forEach((attribute) => {
+      const name = String(attribute.name || '').toLowerCase()
+      if (name.startsWith('on') || name === 'style' || name === 'srcdoc') {
+        node.removeAttribute(attribute.name)
+      }
+    })
+
+    if (node.tagName === 'A') {
+      node.setAttribute('target', '_blank')
+      node.setAttribute('rel', 'noreferrer noopener')
+    }
+
+    if (node.tagName === 'IMG') {
+      node.setAttribute('loading', 'lazy')
+      node.setAttribute('referrerpolicy', 'no-referrer')
+    }
+  })
+
+  return String(document.body?.innerHTML || '').trim()
+}
+
+function EmailHtmlSnippet({ html }) {
+  const safeHtml = sanitizeEmailHtmlPreview(html)
+
+  if (!safeHtml) {
+    return <p className="text-sm leading-6 text-[var(--muted)]">Email này có nội dung HTML.</p>
+  }
+
+  return (
+    <div
+      className="email-html-snippet mt-1.5 rounded-[1rem] border border-[var(--line)] bg-white/72 px-3 py-2.5"
+      dangerouslySetInnerHTML={{ __html: safeHtml }}
+    />
+  )
+}
 
 export function EmailDetailModal({
   open,
@@ -14,6 +102,8 @@ export function EmailDetailModal({
   onDeleteEmail,
   onClose,
 }) {
+  const [previewMode, setPreviewMode] = useState(() => (email?.html ? 'html' : 'text'))
+
   useEffect(() => {
     if (!open) {
       return undefined
@@ -39,6 +129,10 @@ export function EmailDetailModal({
   if (!open) {
     return null
   }
+
+  const bodyText = getEmailBodyText(email)
+  const hasHtmlPreview = Boolean(String(email?.html || '').trim())
+  const htmlPreviewDoc = hasHtmlPreview ? buildEmailHtmlPreviewDoc(email.html) : ''
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(20,26,28,0.48)] p-0 backdrop-blur-sm sm:items-center sm:p-6" onClick={onClose}>
@@ -102,16 +196,61 @@ export function EmailDetailModal({
               </div>
 
               <div className="rounded-[1.35rem] border border-[var(--line)] bg-white/80 p-4 sm:p-5">
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--muted)]">Nội dung text</p>
-                <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-[var(--ink)]">
-                  {email.text || 'Không có text body'}
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--muted)]">
+                    {previewMode === 'html' ? 'HTML preview' : 'Nội dung text'}
+                  </p>
+                  <div className="inline-flex rounded-full border border-[var(--line)] bg-white/88 p-1">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewMode('html')}
+                      disabled={!hasHtmlPreview}
+                      className={cn(
+                        'rounded-full px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] transition-colors',
+                        previewMode === 'html'
+                          ? 'bg-[var(--accent-soft)] text-[var(--accent-strong)]'
+                          : 'text-[var(--muted)] hover:text-[var(--ink)]',
+                        !hasHtmlPreview ? 'cursor-not-allowed opacity-40' : '',
+                      )}
+                    >
+                      HTML
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewMode('text')}
+                      className={cn(
+                        'rounded-full px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] transition-colors',
+                        previewMode === 'text'
+                          ? 'bg-[var(--accent-soft)] text-[var(--accent-strong)]'
+                          : 'text-[var(--muted)] hover:text-[var(--ink)]',
+                      )}
+                    >
+                      Text
+                    </button>
+                  </div>
+                </div>
+
+                {previewMode === 'html' && hasHtmlPreview ? (
+                  <div className="mt-3 overflow-hidden rounded-[1.15rem] border border-[var(--line)] bg-[#fffdfa]">
+                    <iframe
+                      title="Email HTML preview"
+                      srcDoc={htmlPreviewDoc}
+                      sandbox=""
+                      referrerPolicy="no-referrer"
+                      className="h-[26rem] w-full bg-transparent"
+                    />
+                  </div>
+                ) : (
+                  <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-[var(--ink)]">
+                    {bodyText || 'Không có text body'}
+                  </p>
+                )}
               </div>
 
               {email.rawMime ? (
                 <div className="space-y-2">
                   <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--muted)]">MIME gốc (base64)</p>
-                  <CodeBlock className="max-h-64">{email.rawMime}</CodeBlock>
+                  <CodeBlock value={email.rawMime} className="max-h-64" />
                 </div>
               ) : null}
 
@@ -271,7 +410,13 @@ const EmailFeedRow = memo(function EmailFeedRow({
             {isChecked ? <Badge tone="success">Đã chọn</Badge> : null}
             <Badge tone="neutral" className="lg:hidden">{email.domain}</Badge>
           </div>
-          <p className="text-sm leading-6 text-[var(--muted)]">{getEmailPreview(email)}</p>
+          {email.text ? (
+            <p className="text-sm leading-6 text-[var(--muted)]">{getEmailPreview(email)}</p>
+          ) : email.html ? (
+            <EmailHtmlSnippet html={email.html} />
+          ) : (
+            <p className="text-sm leading-6 text-[var(--muted)]">{getEmailPreview(email)}</p>
+          )}
         </div>
 
         <div className="grid gap-2 text-sm text-[var(--ink)]">

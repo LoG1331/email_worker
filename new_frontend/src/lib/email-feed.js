@@ -11,13 +11,17 @@ export function getSenderLabel(email) {
   return name || address || 'Không rõ người gửi'
 }
 
-export function getEmailPreview(email) {
-  const preview = String(email?.text || '')
+export function getEmailBodyText(email) {
+  return String(email?.text || '')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+export function getEmailPreview(email) {
+  const preview = getEmailBodyText(email)
 
   if (!preview) {
-    return 'Không có preview text cho email này.'
+    return email?.html ? 'Email này có nội dung HTML.' : 'Không có preview text cho email này.'
   }
 
   return truncate(preview, 180)
