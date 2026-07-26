@@ -7,12 +7,13 @@ import {
   getDomain,
   listDomains,
 } from '../lib/api.js'
-import { cn, formatApiError, formatDateTime, truncate } from '../lib/format.js'
+import { cn, findIssueMessage, formatApiError, formatDateTime, truncate } from '../lib/format.js'
 import { clampOffset } from '../lib/pagination.js'
-import { AutoRefreshButton, Badge, Button, Checkbox, CompactPagination, Field, Input, ModalShell, Panel, Select, TextArea } from '../components/ui.jsx'
+import { AutoRefreshButton, Badge, Button, Checkbox, CompactPagination, Field, FormError, Input, ModalShell, Panel, Select, TextArea } from '../components/ui.jsx'
 import { useAutoRefresh } from '../hooks/useAutoRefresh.js'
 
 const STATUS_OPTIONS = ['active', 'disabled']
+const CREATE_HANDLED_FIELDS = ['domain', 'description', 'status', 'inboundEnabled', 'isDefault']
 
 function emptyDomainForm() {
   return {
@@ -24,7 +25,9 @@ function emptyDomainForm() {
   }
 }
 
-function DomainCreateModal({ open, form, saving, onChange, onSubmit, onClose }) {
+function DomainCreateModal({ open, form, saving, error, onChange, onSubmit, onClose }) {
+  const domainError = findIssueMessage(error, 'domain')
+
   return (
     <ModalShell
       open={open}
@@ -35,15 +38,16 @@ function DomainCreateModal({ open, form, saving, onChange, onSubmit, onClose }) 
       size="md"
     >
       <form className="grid gap-4 md:grid-cols-2" onSubmit={onSubmit}>
-        <Field label="Domain">
-          <Input value={form.domain} onChange={(event) => onChange((current) => ({ ...current, domain: event.target.value }))} placeholder="example.com" />
+        <FormError error={error} handledFields={CREATE_HANDLED_FIELDS} className="md:col-span-2" />
+        <Field label="Domain" error={domainError}>
+          <Input invalid={Boolean(domainError)} value={form.domain} onChange={(event) => onChange((current) => ({ ...current, domain: event.target.value }))} placeholder="example.com" />
         </Field>
-        <Field label="Trạng thái">
+        <Field label="Trạng thái" error={findIssueMessage(error, 'status')}>
           <Select value={form.status} onChange={(event) => onChange((current) => ({ ...current, status: event.target.value }))}>
             {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
           </Select>
         </Field>
-        <Field label="Mô tả" className="md:col-span-2">
+        <Field label="Mô tả" className="md:col-span-2" error={findIssueMessage(error, 'description')}>
           <TextArea rows={3} value={form.description} onChange={(event) => onChange((current) => ({ ...current, description: event.target.value }))} />
         </Field>
         <div className="md:col-span-2 flex flex-wrap gap-4">
@@ -65,6 +69,7 @@ function DomainDetailModal({
   loading,
   canDelete,
   deletingDomain,
+  error,
   onDeleteDomain,
   onClose,
 }) {
@@ -88,6 +93,7 @@ function DomainDetailModal({
     >
       {domain ? (
         <div className="space-y-4">
+          <FormError error={error} />
           <div className="flex flex-wrap items-center gap-x-5 gap-y-3 rounded-[1.3rem] border border-[var(--line)] bg-white/74 px-4 py-3">
             <div className="min-w-0 flex-1 basis-64">
               <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[var(--muted)]">Mô tả</p>
@@ -156,6 +162,8 @@ export default function DomainsView({ token, account, accessibleDomains }) {
   const [creatingDomain, setCreatingDomain] = useState(false)
   const [deletingDomain, setDeletingDomain] = useState(false)
   const [createForm, setCreateForm] = useState(emptyDomainForm())
+  const [createError, setCreateError] = useState(null)
+  const [detailError, setDetailError] = useState(null)
   const [filters, setFilters] = useState({
     limit: 50,
     offset: 0,
@@ -259,6 +267,7 @@ export default function DomainsView({ token, account, accessibleDomains }) {
   async function handleCreateDomain(event) {
     event.preventDefault()
     setCreatingDomain(true)
+    setCreateError(null)
 
     try {
       const response = await createDomain(token, createForm)
@@ -274,7 +283,7 @@ export default function DomainsView({ token, account, accessibleDomains }) {
       await loadDomains(response.domain.domain, nextFilters, { showLoading: false, showError: false })
       await loadDomainDetail(response.domain.domain, { showLoading: false, showError: false })
     } catch (error) {
-      toast.error(formatApiError(error))
+      setCreateError(error)
     } finally {
       setCreatingDomain(false)
     }
@@ -286,6 +295,7 @@ export default function DomainsView({ token, account, accessibleDomains }) {
     }
 
     setDeletingDomain(true)
+    setDetailError(null)
 
     try {
       await deleteDomain(token, selectedDomainName)
@@ -294,7 +304,7 @@ export default function DomainsView({ token, account, accessibleDomains }) {
       setSelectedDomain(null)
       await loadDomains(null, filters, { showLoading: false, showError: false })
     } catch (error) {
-      toast.error(formatApiError(error))
+      setDetailError(error)
     } finally {
       setDeletingDomain(false)
     }
@@ -331,7 +341,15 @@ export default function DomainsView({ token, account, accessibleDomains }) {
               onNext={() => setFilters((current) => ({ ...current, offset: current.offset + current.limit }))}
             />
             {account.isAdmin ? (
-              <Button size="sm" icon={Plus} onClick={() => setCreateModalOpen(true)}>
+              <Button
+                size="sm"
+                icon={Plus}
+                onClick={() => {
+                  setCreateError(null)
+                  setCreateForm(emptyDomainForm())
+                  setCreateModalOpen(true)
+                }}
+              >
                 Tạo domain
               </Button>
             ) : null}
@@ -408,9 +426,13 @@ export default function DomainsView({ token, account, accessibleDomains }) {
           open={createModalOpen}
           form={createForm}
           saving={creatingDomain}
+          error={createError}
           onChange={setCreateForm}
           onSubmit={handleCreateDomain}
-          onClose={() => setCreateModalOpen(false)}
+          onClose={() => {
+            setCreateModalOpen(false)
+            setCreateError(null)
+          }}
         />
       ) : null}
 
@@ -420,10 +442,12 @@ export default function DomainsView({ token, account, accessibleDomains }) {
         loading={loadingDetail}
         canDelete={account.isAdmin}
         deletingDomain={deletingDomain}
+        error={detailError}
         onDeleteDomain={handleDeleteDomain}
         onClose={() => {
           setSelectedDomainName(null)
           setSelectedDomain(null)
+          setDetailError(null)
         }}
       />
     </div>

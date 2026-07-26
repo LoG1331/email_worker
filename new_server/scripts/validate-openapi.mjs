@@ -17,6 +17,8 @@ for (const requiredPath of [
     '/health',
     '/v1/auth/login',
     '/v1/auth/me',
+    '/v1/blocked-senders',
+    '/v1/blocked-senders/{blockedSenderId}',
     '/v1/domains',
     '/v1/groups/{groupId}/emails',
     '/v1/inbound/email',

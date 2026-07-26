@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
-import { ChevronLeft, ChevronRight, LoaderCircle, X } from 'lucide-react'
-import { cn } from '../lib/format.js'
+import { AlertTriangle, ChevronLeft, ChevronRight, LoaderCircle, X } from 'lucide-react'
+import { cn, getApiErrorIssues } from '../lib/format.js'
 import { buildPaginationMeta } from '../lib/pagination.js'
 
 const PANEL_TONE_CLASS = {
@@ -55,29 +55,85 @@ export function Button({
   )
 }
 
-export function Field({ label, hint, className, children }) {
+export function Field({ label, hint, error, className, children }) {
   return (
     <label className={cn('flex flex-col gap-1.5', className)}>
       <div className="flex items-center justify-between gap-3">
         <span className="text-sm font-semibold text-[var(--ink)]">{label}</span>
-        {hint ? <span className="text-[11px] text-[var(--muted)]">{hint}</span> : null}
+        {hint && !error ? <span className="text-[11px] text-[var(--muted)]">{hint}</span> : null}
       </div>
       {children}
+      {error ? <span className="text-[11px] font-semibold text-[var(--danger)]">{error}</span> : null}
     </label>
   )
 }
 
-export function Input({ className, ...props }) {
-  return <input className={cn('form-input', className)} {...props} />
+/**
+ * Hiển thị lỗi API ngay trong form thay vì chỉ bắn toast rồi biến mất.
+ * Các issue đã gắn được vào field cụ thể thì để `Field` render inline,
+ * ở đây chỉ tóm tắt phần còn lại.
+ */
+export function FormError({ error, handledFields = [], className }) {
+  if (!error) {
+    return null
+  }
+
+  const handled = new Set(handledFields)
+  const issues = getApiErrorIssues(error).filter((issue) => !issue.field || !handled.has(issue.field))
+
+  return (
+    <div
+      role="alert"
+      className={cn(
+        'flex gap-3 rounded-[1.1rem] border border-[var(--danger)]/35 bg-[var(--danger-soft)] px-4 py-3',
+        className,
+      )}
+    >
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[var(--danger)]" />
+      <div className="min-w-0 space-y-1">
+        <p className="text-sm font-semibold text-[var(--danger)]">{error.message || 'Thao tác thất bại'}</p>
+        {issues.length ? (
+          <ul className="space-y-0.5 text-[12px] leading-5 text-[var(--danger)]">
+            {issues.map((issue, index) => (
+              <li key={`${issue.field}-${index}`}>
+                {issue.label ? `${issue.label}: ` : ''}{issue.message}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {error.requestId ? (
+          <p className="text-[11px] text-[var(--danger)]/75">Mã lỗi: {error.requestId}</p>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+export function Input({ className, invalid = false, ...props }) {
+  return (
+    <input
+      className={cn('form-input', invalid && 'border-[var(--danger)] focus:border-[var(--danger)]', className)}
+      aria-invalid={invalid || undefined}
+      {...props}
+    />
+  )
 }
 
 export function TextArea({ className, rows = 4, ...props }) {
   return <textarea rows={rows} className={cn('form-input resize-y', className)} {...props} />
 }
 
-export function Select({ className, children, ...props }) {
+export function Select({ className, children, invalid = false, ...props }) {
   return (
-    <select className={cn('form-input appearance-none pr-10', className)} {...props}>
+    <select
+      className={cn(
+        'form-input appearance-none pr-10',
+        invalid && 'border-[var(--danger)] focus:border-[var(--danger)]',
+        className,
+      )}
+      aria-invalid={invalid || undefined}
+      {...props}
+    >
       {children}
     </select>
   )

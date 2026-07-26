@@ -18,6 +18,7 @@ Tài liệu này dành cho frontend mới. Nguồn chuẩn máy đọc vẫn là
 - `permissions`: quyền theo `user + domain + status`
 - `email_registers`: mailbox cụ thể mà user đã đăng ký monitor
 - `emails`: mail đã ingest
+- `blocked_senders`: danh sách người gửi bị chặn theo email hoặc theo domain
 - `groups`: group thuộc sở hữu cố định của một user
 - `group_emails`: danh sách `email_id` nằm trong group
 
@@ -29,6 +30,7 @@ Tài liệu này dành cho frontend mới. Nguồn chuẩn máy đọc vẫn là
 - Hai user không thể cùng đăng ký một `emailAddress`
 - Group chỉ thuộc về owner, không chuyển owner
 - Muốn add mail vào group thì mailbox đó phải đã được owner đăng ký trước
+- Chỉ admin mới quản lý được danh sách chặn người gửi
 
 ## Error format
 
@@ -436,7 +438,16 @@ Response:
 - `hasMore`
 - `nextCursor`
 
+Mọi route trả danh sách mail (`GET /v1/emails`, `GET /v1/inboxes/:emailAddress`, `GET /v1/groups/:groupId/emails`) đều trả bản rút gọn `EmailSummary`, **không kèm `text` và `html` đầy đủ**:
+
+- `preview`: 400 ký tự đầu của text body, đủ để render dòng danh sách
+- `hasText` / `hasHtml`: cho biết mail có nội dung dạng nào mà không cần tải nội dung
+
+Lý do: nhét cả body vào từng dòng làm payload phình theo số mail (50 mail ≈ 440KB), gây giật UI khi hộp thư lớn. Cần nội dung đầy đủ thì gọi route chi tiết.
+
 ### `GET /v1/emails/:id`
+
+Trả `Email` đầy đủ, có `text` và `html`.
 
 Query:
 
@@ -461,6 +472,59 @@ Behavior:
 - tối đa `200` email IDs mỗi request
 - backend kiểm quyền `write` trên từng email trước khi xóa
 - response trả thêm `deletedIds`, `missingIds`, `deniedIds` để frontend xử lý batch stale selection
+
+## Blocked Senders
+
+Admin only. Mail từ người gửi bị chặn sẽ bị bỏ ngay ở bước ingest: không lưu DB, không vào group, không bắn Telegram.
+
+### `GET /v1/blocked-senders`
+
+Query:
+
+- `q`: tìm theo `pattern` hoặc `reason`
+- `patternType=email|domain`
+- `status=active|disabled`
+- `scope=global|domain`
+- `domain`: lọc theo domain nhận mà rule bị giới hạn
+- `limit` mặc định `50`, max `200`
+- `offset` mặc định `0`
+
+Response:
+
+- `total`
+- `count`
+- `blockedSenders[]`
+
+### `POST /v1/blocked-senders`
+
+Body:
+
+```json
+{
+  "pattern": "spam@example.com",
+  "patternType": "email",
+  "domain": null,
+  "reason": "Spam quảng cáo",
+  "status": "active"
+}
+```
+
+Behavior:
+
+- `patternType` bỏ trống thì backend tự suy ra: có `@` là `email`, không có là `domain`
+- `pattern` dạng `@example.com` cũng được hiểu là chặn cả domain
+- `patternType=domain` chặn luôn mọi subdomain, ví dụ `example.com` chặn cả `mail.example.com`
+- `domain` bỏ trống hoặc `null` thì rule áp dụng toàn hệ thống, ngược lại chỉ áp dụng cho mail gửi tới domain nhận đó
+- trùng `patternType + pattern + domain` thì trả `409`
+
+### `GET /v1/blocked-senders/:blockedSenderId`
+### `PATCH /v1/blocked-senders/:blockedSenderId`
+
+Body nhận các field như khi tạo, tất cả đều optional. Dùng `status=disabled` để tạm tắt rule mà không xóa.
+
+### `DELETE /v1/blocked-senders/:blockedSenderId`
+
+Xóa hẳn rule. Mail đã bị chặn trước đó không được khôi phục.
 
 ## Inboxes
 
@@ -589,6 +653,8 @@ Worker-only route.
   - `X-Email-Envelope-To`
   - `X-Email-Envelope-From`
   - `X-Email-Worker-Name`
+
+Nếu người gửi khớp một rule trong `blocked_senders` thì mail bị bỏ: response vẫn là `202` với `blocked: true`, `id: null` và `blockedBy` mô tả rule đã khớp. Trả `202` để worker coi như đã xử lý xong, không retry và không bounce ngược về người gửi.
 
 Frontend không dùng route này.
 

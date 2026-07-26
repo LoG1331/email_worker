@@ -2,13 +2,14 @@ import { useDeferredValue, useEffect, useState } from 'react'
 import { KeyRound, Search, ShieldCheck, UserPlus, UserRound } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import { createUser, getUserById, listUsers, updateUser } from '../lib/api.js'
-import { cn, formatApiError, formatDateTime, getPermissionScopeLabel, normalizeOptional } from '../lib/format.js'
+import { cn, findIssueMessage, formatApiError, formatDateTime, getPermissionScopeLabel, normalizeOptional } from '../lib/format.js'
 import { clampOffset } from '../lib/pagination.js'
-import { AutoRefreshButton, Badge, Button, CompactPagination, Field, Input, ModalShell, Panel, Select } from '../components/ui.jsx'
+import { AutoRefreshButton, Badge, Button, CompactPagination, Field, FormError, Input, ModalShell, Panel, Select } from '../components/ui.jsx'
 import { useAutoRefresh } from '../hooks/useAutoRefresh.js'
 
 const USER_STATUSES = ['active', 'disabled']
 const COMPACT_INPUT_CLASS = 'min-h-[44px] rounded-[0.95rem] px-4 py-2.5 text-sm'
+const USER_FORM_FIELDS = ['username', 'password', 'displayName', 'telegramId', 'status']
 
 function emptyCreateForm() {
   return {
@@ -20,7 +21,11 @@ function emptyCreateForm() {
   }
 }
 
-function UserCreateModal({ open, form, saving, onChange, onSubmit, onClose }) {
+function UserCreateModal({ open, form, saving, error, onChange, onSubmit, onClose }) {
+  const usernameError = findIssueMessage(error, 'username')
+  const passwordError = findIssueMessage(error, 'password')
+  const telegramIdError = findIssueMessage(error, 'telegramId')
+
   return (
     <ModalShell
       open={open}
@@ -31,19 +36,20 @@ function UserCreateModal({ open, form, saving, onChange, onSubmit, onClose }) {
       size="md"
     >
       <form className="grid gap-4 md:grid-cols-2" onSubmit={onSubmit}>
-        <Field label="Tên đăng nhập">
-          <Input autoComplete="username" value={form.username} onChange={(event) => onChange((current) => ({ ...current, username: event.target.value }))} />
+        <FormError error={error} handledFields={USER_FORM_FIELDS} className="md:col-span-2" />
+        <Field label="Tên đăng nhập" error={usernameError}>
+          <Input autoComplete="username" invalid={Boolean(usernameError)} value={form.username} onChange={(event) => onChange((current) => ({ ...current, username: event.target.value }))} />
         </Field>
-        <Field label="Mật khẩu">
-          <Input type="password" autoComplete="new-password" value={form.password} onChange={(event) => onChange((current) => ({ ...current, password: event.target.value }))} />
+        <Field label="Mật khẩu" hint="Tối thiểu 8 ký tự" error={passwordError}>
+          <Input type="password" autoComplete="new-password" invalid={Boolean(passwordError)} value={form.password} onChange={(event) => onChange((current) => ({ ...current, password: event.target.value }))} />
         </Field>
-        <Field label="Tên hiển thị">
+        <Field label="Tên hiển thị" error={findIssueMessage(error, 'displayName')}>
           <Input value={form.displayName} onChange={(event) => onChange((current) => ({ ...current, displayName: event.target.value }))} />
         </Field>
-        <Field label="Telegram ID">
-          <Input value={form.telegramId} onChange={(event) => onChange((current) => ({ ...current, telegramId: event.target.value }))} />
+        <Field label="Telegram ID" error={telegramIdError}>
+          <Input invalid={Boolean(telegramIdError)} value={form.telegramId} onChange={(event) => onChange((current) => ({ ...current, telegramId: event.target.value }))} />
         </Field>
-        <Field label="Trạng thái" className="md:col-span-2">
+        <Field label="Trạng thái" className="md:col-span-2" error={findIssueMessage(error, 'status')}>
           <Select value={form.status} onChange={(event) => onChange((current) => ({ ...current, status: event.target.value }))}>
             {USER_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
           </Select>
@@ -63,10 +69,15 @@ function UserDetailModal({
   form,
   saving,
   loading,
+  error,
   onChange,
   onSubmit,
   onClose,
 }) {
+  const usernameError = findIssueMessage(error, 'username')
+  const passwordError = findIssueMessage(error, 'password')
+  const telegramIdError = findIssueMessage(error, 'telegramId')
+
   return (
     <ModalShell
       open={open}
@@ -118,27 +129,30 @@ function UserDetailModal({
               </div>
             </div>
 
+            <FormError error={error} handledFields={USER_FORM_FIELDS} className="mb-3" />
+
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px]">
-              <Field label="Tên đăng nhập">
-                <Input className={COMPACT_INPUT_CLASS} autoComplete="username" value={form.username} onChange={(event) => onChange((current) => ({ ...current, username: event.target.value }))} />
+              <Field label="Tên đăng nhập" error={usernameError}>
+                <Input className={COMPACT_INPUT_CLASS} autoComplete="username" invalid={Boolean(usernameError)} value={form.username} onChange={(event) => onChange((current) => ({ ...current, username: event.target.value }))} />
               </Field>
-              <Field label="Tên hiển thị">
+              <Field label="Tên hiển thị" error={findIssueMessage(error, 'displayName')}>
                 <Input className={COMPACT_INPUT_CLASS} value={form.displayName} onChange={(event) => onChange((current) => ({ ...current, displayName: event.target.value }))} />
               </Field>
-              <Field label="Trạng thái">
+              <Field label="Trạng thái" error={findIssueMessage(error, 'status')}>
                 <Select className={COMPACT_INPUT_CLASS} value={form.status} onChange={(event) => onChange((current) => ({ ...current, status: event.target.value }))}>
                   {USER_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
                 </Select>
               </Field>
-              <Field label="Telegram ID">
-                <Input className={COMPACT_INPUT_CLASS} value={form.telegramId} onChange={(event) => onChange((current) => ({ ...current, telegramId: event.target.value }))} />
+              <Field label="Telegram ID" error={telegramIdError}>
+                <Input className={COMPACT_INPUT_CLASS} invalid={Boolean(telegramIdError)} value={form.telegramId} onChange={(event) => onChange((current) => ({ ...current, telegramId: event.target.value }))} />
               </Field>
-              <Field label="Mật khẩu mới" className="md:col-span-2 xl:col-span-2">
+              <Field label="Mật khẩu mới" className="md:col-span-2 xl:col-span-2" hint="Bỏ trống nếu giữ nguyên" error={passwordError}>
                 <Input
                   className={COMPACT_INPUT_CLASS}
                   type="password"
                   autoComplete="new-password"
                   placeholder="Bỏ trống nếu giữ nguyên"
+                  invalid={Boolean(passwordError)}
                   value={form.password}
                   onChange={(event) => onChange((current) => ({ ...current, password: event.target.value }))}
                 />
@@ -210,6 +224,8 @@ export default function UsersView({ token }) {
     status: 'active',
   })
   const [savingUser, setSavingUser] = useState(false)
+  const [createError, setCreateError] = useState(null)
+  const [editError, setEditError] = useState(null)
 
   async function loadUsers(
     preferredUserId = selectedUserId,
@@ -328,6 +344,7 @@ export default function UsersView({ token }) {
   async function handleCreate(event) {
     event.preventDefault()
     setCreatingUser(true)
+    setCreateError(null)
 
     try {
       const response = await createUser(token, {
@@ -347,7 +364,7 @@ export default function UsersView({ token }) {
       }, { showLoading: false, showError: false })
       await loadSelectedUserDetail(response.user.id, { showLoading: false, showError: false })
     } catch (error) {
-      toast.error(formatApiError(error))
+      setCreateError(error)
     } finally {
       setCreatingUser(false)
     }
@@ -361,6 +378,7 @@ export default function UsersView({ token }) {
     }
 
     setSavingUser(true)
+    setEditError(null)
 
     try {
       await updateUser(token, selectedUserId, {
@@ -378,7 +396,7 @@ export default function UsersView({ token }) {
       }, { showLoading: false, showError: false })
       await loadSelectedUserDetail(selectedUserId, { showLoading: false, showError: false })
     } catch (error) {
-      toast.error(formatApiError(error))
+      setEditError(error)
     } finally {
       setSavingUser(false)
     }
@@ -414,6 +432,7 @@ export default function UsersView({ token }) {
   function handleCloseDetail() {
     setSelectedUserId(null)
     setSelectedUser(null)
+    setEditError(null)
   }
 
   return (
@@ -472,7 +491,15 @@ export default function UsersView({ token }) {
               onPrev={() => setFilters((current) => ({ ...current, offset: Math.max(0, current.offset - current.limit) }))}
               onNext={() => setFilters((current) => ({ ...current, offset: current.offset + current.limit }))}
             />
-            <Button size="sm" icon={UserPlus} onClick={() => setCreateModalOpen(true)}>
+            <Button
+              size="sm"
+              icon={UserPlus}
+              onClick={() => {
+                setCreateError(null)
+                setCreateForm(emptyCreateForm())
+                setCreateModalOpen(true)
+              }}
+            >
               Tạo người dùng
             </Button>
           </div>
@@ -550,9 +577,13 @@ export default function UsersView({ token }) {
         open={createModalOpen}
         form={createForm}
         saving={creatingUser}
+        error={createError}
         onChange={setCreateForm}
         onSubmit={handleCreate}
-        onClose={() => setCreateModalOpen(false)}
+        onClose={() => {
+          setCreateModalOpen(false)
+          setCreateError(null)
+        }}
       />
 
       <UserDetailModal
@@ -561,6 +592,7 @@ export default function UsersView({ token }) {
         form={editForm}
         saving={savingUser}
         loading={loadingDetail}
+        error={editError}
         onChange={setEditForm}
         onSubmit={handleUpdate}
         onClose={handleCloseDetail}

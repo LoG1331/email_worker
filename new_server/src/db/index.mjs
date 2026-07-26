@@ -188,6 +188,21 @@ async function initializeDatabase(config) {
             value TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS blocked_senders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pattern_type TEXT NOT NULL CHECK(pattern_type IN ('email', 'domain')),
+            pattern TEXT NOT NULL,
+            domain_id INTEGER REFERENCES domains(id) ON DELETE CASCADE,
+            reason TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'disabled')),
+            match_count INTEGER NOT NULL DEFAULT 0,
+            last_matched_at TEXT,
+            created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_by_label TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
     `);
 
     await rebuildPermissionsTableIfNeeded(db);
@@ -217,6 +232,9 @@ async function initializeDatabase(config) {
         CREATE INDEX IF NOT EXISTS idx_telegram_outbox_status_due ON telegram_outbox (status, next_attempt_at, id);
         CREATE INDEX IF NOT EXISTS idx_telegram_outbox_email ON telegram_outbox (email_id);
         CREATE INDEX IF NOT EXISTS idx_system_settings_updated_at ON system_settings (updated_at);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_blocked_senders_unique ON blocked_senders (pattern_type, pattern, COALESCE(domain_id, 0));
+        CREATE INDEX IF NOT EXISTS idx_blocked_senders_lookup ON blocked_senders (status, pattern_type, pattern);
+        CREATE INDEX IF NOT EXISTS idx_blocked_senders_domain_scope ON blocked_senders (domain_id, status, pattern_type);
     `);
 
     return db;

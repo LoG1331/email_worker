@@ -86,6 +86,8 @@ export function createInboundRouter(config) {
                 rawMime
             });
 
+            // Blocked senders still get 202 so the worker treats the message as
+            // delivered and does not retry or bounce it back to the sender.
             res.status(202).json({
                 success: true,
                 ...result,

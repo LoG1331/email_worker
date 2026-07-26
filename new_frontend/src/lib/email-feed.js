@@ -17,12 +17,19 @@ export function getEmailBodyText(email) {
     .trim()
 }
 
+/**
+ * Route danh sách chỉ trả `preview` (400 ký tự đầu) để payload không phình theo
+ * số mail; route chi tiết vẫn trả `text` đầy đủ nên ưu tiên dùng nếu đã có.
+ */
 export function getEmailPreview(email) {
-  const preview = getEmailBodyText(email)
+  const source = String(email?.text || email?.preview || '')
+    .replace(/\s+/g, ' ')
+    .trim()
 
-  if (!preview) {
-    return email?.html ? 'Email này có nội dung HTML.' : 'Không có preview text cho email này.'
+  if (source) {
+    return truncate(source, 180)
   }
 
-  return truncate(preview, 180)
+  const hasHtml = email?.hasHtml ?? Boolean(email?.html)
+  return hasHtml ? 'Email này có nội dung HTML.' : 'Không có preview text cho email này.'
 }

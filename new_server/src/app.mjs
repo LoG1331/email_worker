@@ -11,6 +11,7 @@ import { createAuthRouter } from './routes/auth.routes.mjs';
 import { createUsersRouter } from './routes/users.routes.mjs';
 import { createPermissionsRouter } from './routes/permissions.routes.mjs';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.mjs';
+import { createBlockedSendersRouter } from './routes/blocked-senders.routes.mjs';
 import { createDomainsRouter } from './routes/domains.routes.mjs';
 import { createEmailRegistersRouter } from './routes/email-registers.routes.mjs';
 import { createEmailsRouter, createInboxesRouter } from './routes/emails.routes.mjs';
@@ -140,6 +141,7 @@ export function createApp(config) {
     app.use('/v1/admins', ...withOptionalMiddleware(corsMiddleware, authLimiter, userAuth, createAdminsRouter(config)));
     app.use('/v1/permissions', ...withOptionalMiddleware(corsMiddleware, authLimiter, userAuth, createPermissionsRouter(config)));
     app.use('/v1/domains', ...withOptionalMiddleware(corsMiddleware, authLimiter, userAuth, createDomainsRouter(config)));
+    app.use('/v1/blocked-senders', ...withOptionalMiddleware(corsMiddleware, authLimiter, userAuth, createBlockedSendersRouter(config)));
     app.use('/v1/email-registers', ...withOptionalMiddleware(corsMiddleware, authLimiter, userAuth, createEmailRegistersRouter(config)));
     app.use('/v1/emails', ...withOptionalMiddleware(corsMiddleware, authLimiter, userAuth, createEmailsRouter(config)));
     app.use('/v1/groups', ...withOptionalMiddleware(corsMiddleware, authLimiter, userAuth, createGroupsRouter(config)));

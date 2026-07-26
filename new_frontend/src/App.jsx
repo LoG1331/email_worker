@@ -1,5 +1,6 @@
 import { Suspense, lazy, startTransition, useEffect, useMemo, useState } from 'react'
 import {
+  Ban,
   Bot,
   Crown,
   FolderKanban,
@@ -16,6 +17,7 @@ import { getMe, login, logout, refreshSession } from './lib/api.js'
 import { formatApiError } from './lib/format.js'
 const AdminsView = lazy(() => import('./views/AdminsView.jsx'))
 const AdminEmailsView = lazy(() => import('./views/AdminEmailsView.jsx'))
+const BlockedSendersView = lazy(() => import('./views/BlockedSendersView.jsx'))
 const DomainsView = lazy(() => import('./views/DomainsView.jsx'))
 const EmailsView = lazy(() => import('./views/EmailsView.jsx'))
 const GroupsView = lazy(() => import('./views/GroupsView.jsx'))
@@ -35,6 +37,7 @@ const BASE_NAV_ITEMS = [
 
 const ADMIN_NAV_ITEMS = [
   { id: 'admin-mails', label: 'Mail hệ thống', icon: Mail },
+  { id: 'blocked-senders', label: 'Chặn người gửi', icon: Ban },
   { id: 'telegram', label: 'Telegram Bot', icon: Bot },
   { id: 'users', label: 'Người dùng', icon: Users2 },
   { id: 'permissions', label: 'Quyền', icon: ShieldCheck },
@@ -45,6 +48,7 @@ const VIEW_LABELS = {
   overview: OverviewView,
   emails: EmailsView,
   'admin-mails': AdminEmailsView,
+  'blocked-senders': BlockedSendersView,
   groups: GroupsView,
   domains: DomainsView,
   telegram: TelegramView,
@@ -155,7 +159,7 @@ export default function App() {
       return
     }
 
-    if (activeView === 'admin-mails' || activeView === 'telegram' || activeView === 'users' || activeView === 'permissions' || activeView === 'admins') {
+    if (ADMIN_NAV_ITEMS.some((item) => item.id === activeView)) {
       setActiveView('overview')
     }
   }, [account, activeView])

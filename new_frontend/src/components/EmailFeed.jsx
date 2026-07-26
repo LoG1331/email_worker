@@ -39,59 +39,6 @@ function buildEmailHtmlPreviewDoc(html) {
 </html>`
 }
 
-function sanitizeEmailHtmlPreview(html) {
-  const source = String(html || '').trim()
-  if (!source) {
-    return ''
-  }
-
-  if (typeof window === 'undefined' || typeof window.DOMParser !== 'function') {
-    return source
-  }
-
-  const document = new window.DOMParser().parseFromString(source, 'text/html')
-
-  document.querySelectorAll('script, style, iframe, object, embed, link, meta, base').forEach((node) => {
-    node.remove()
-  })
-
-  document.querySelectorAll('*').forEach((node) => {
-    Array.from(node.attributes).forEach((attribute) => {
-      const name = String(attribute.name || '').toLowerCase()
-      if (name.startsWith('on') || name === 'style' || name === 'srcdoc') {
-        node.removeAttribute(attribute.name)
-      }
-    })
-
-    if (node.tagName === 'A') {
-      node.setAttribute('target', '_blank')
-      node.setAttribute('rel', 'noreferrer noopener')
-    }
-
-    if (node.tagName === 'IMG') {
-      node.setAttribute('loading', 'lazy')
-      node.setAttribute('referrerpolicy', 'no-referrer')
-    }
-  })
-
-  return String(document.body?.innerHTML || '').trim()
-}
-
-function EmailHtmlSnippet({ html }) {
-  const safeHtml = sanitizeEmailHtmlPreview(html)
-
-  if (!safeHtml) {
-    return <p className="text-sm leading-6 text-[var(--muted)]">Email này có nội dung HTML.</p>
-  }
-
-  return (
-    <div
-      className="email-html-snippet mt-1.5 rounded-[1rem] border border-[var(--line)] bg-white/72 px-3 py-2.5"
-      dangerouslySetInnerHTML={{ __html: safeHtml }}
-    />
-  )
-}
-
 export function EmailDetailModal({
   open,
   email,
@@ -411,13 +358,7 @@ const EmailFeedRow = memo(function EmailFeedRow({
             {isChecked ? <Badge tone="success">Đã chọn</Badge> : null}
             <Badge tone="neutral" className="lg:hidden">{email.domain}</Badge>
           </div>
-          {email.text ? (
-            <p className="text-sm leading-6 text-[var(--muted)]">{getEmailPreview(email)}</p>
-          ) : email.html ? (
-            <EmailHtmlSnippet html={email.html} />
-          ) : (
-            <p className="text-sm leading-6 text-[var(--muted)]">{getEmailPreview(email)}</p>
-          )}
+          <p className="text-sm leading-6 text-[var(--muted)]">{getEmailPreview(email)}</p>
         </div>
 
         <div className="grid gap-2 text-sm text-[var(--ink)]">
