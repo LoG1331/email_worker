@@ -854,6 +854,230 @@ async function main() {
         });
         assertStatus(ingestSecretEmail, 202, 'ingest secret email');
 
+        const blockExactSender = await request(baseUrl, '/v1/blocked-senders', {
+            method: 'POST',
+            token: adminToken,
+            json: {
+                pattern: 'spammer@blocked.test',
+                reason: 'Smoke spam'
+            }
+        });
+        assertStatus(blockExactSender, 201, 'block exact sender');
+        assert.equal(blockExactSender.body.blockedSender.patternType, 'email');
+        assert.equal(blockExactSender.body.blockedSender.scope, 'global');
+        assert.equal(blockExactSender.body.blockedSender.domain, null);
+        assert.equal(blockExactSender.body.blockedSender.matchCount, 0);
+        const blockExactSenderId = blockExactSender.body.blockedSender.id;
+
+        const blockDuplicateSender = await request(baseUrl, '/v1/blocked-senders', {
+            method: 'POST',
+            token: adminToken,
+            json: {
+                pattern: 'spammer@blocked.test'
+            }
+        });
+        assertStatus(blockDuplicateSender, 409, 'duplicate blocked sender rejected');
+
+        const blockSenderDomain = await request(baseUrl, '/v1/blocked-senders', {
+            method: 'POST',
+            token: adminToken,
+            json: {
+                pattern: '@ads.test',
+                reason: 'Whole ad network'
+            }
+        });
+        assertStatus(blockSenderDomain, 201, 'block sender domain');
+        assert.equal(blockSenderDomain.body.blockedSender.patternType, 'domain');
+        assert.equal(blockSenderDomain.body.blockedSender.pattern, 'ads.test');
+        const blockSenderDomainId = blockSenderDomain.body.blockedSender.id;
+
+        const blockScopedSender = await request(baseUrl, '/v1/blocked-senders', {
+            method: 'POST',
+            token: adminToken,
+            json: {
+                pattern: 'scoped@partner.test',
+                domain: 'cleanup.test'
+            }
+        });
+        assertStatus(blockScopedSender, 201, 'block sender scoped to one recipient domain');
+        assert.equal(blockScopedSender.body.blockedSender.scope, 'domain');
+        assert.equal(blockScopedSender.body.blockedSender.domain, 'cleanup.test');
+        const blockScopedSenderId = blockScopedSender.body.blockedSender.id;
+
+        const blockedSendersForNonAdmin = await request(baseUrl, '/v1/blocked-senders', {
+            token: config.inboundAuthToken
+        });
+        assertStatus(blockedSendersForNonAdmin, 401, 'inbound token cannot read blocked senders');
+
+        const telegramCallsBeforeBlockedIngest = fakeTelegram.calls.length;
+
+        const ingestBlockedExact = await request(baseUrl, '/v1/inbound/email', {
+            method: 'POST',
+            token: config.inboundAuthToken,
+            body: createMimeMessage({
+                to: 'alice@example.com',
+                subject: 'Blocked exact sender',
+                messageId: 'smoke-blocked-1@blocked.test',
+                text: 'Should not be stored'
+            }),
+            headers: {
+                'Content-Type': 'message/rfc822',
+                'X-Email-Envelope-To': 'alice@example.com',
+                'X-Email-Envelope-From': 'spammer@blocked.test',
+                'X-Email-Worker-Name': 'smoke-worker'
+            }
+        });
+        assertStatus(ingestBlockedExact, 202, 'ingest blocked exact sender');
+        assert.equal(ingestBlockedExact.body.blocked, true);
+        assert.equal(ingestBlockedExact.body.id, null);
+        assert.equal(ingestBlockedExact.body.blockedBy.patternType, 'email');
+        assert.equal(ingestBlockedExact.body.blockedBy.pattern, 'spammer@blocked.test');
+        assert.equal(ingestBlockedExact.body.blockedBy.sender, 'spammer@blocked.test');
+
+        const ingestBlockedSubdomain = await request(baseUrl, '/v1/inbound/email', {
+            method: 'POST',
+            token: config.inboundAuthToken,
+            body: createMimeMessage({
+                to: 'alice@example.com',
+                subject: 'Blocked sender subdomain',
+                messageId: 'smoke-blocked-2@mail.ads.test',
+                text: 'Should not be stored'
+            }),
+            headers: {
+                'Content-Type': 'message/rfc822',
+                'X-Email-Envelope-To': 'alice@example.com',
+                'X-Email-Envelope-From': 'promo@mail.ads.test',
+                'X-Email-Worker-Name': 'smoke-worker'
+            }
+        });
+        assertStatus(ingestBlockedSubdomain, 202, 'ingest blocked sender subdomain');
+        assert.equal(ingestBlockedSubdomain.body.blocked, true);
+        assert.equal(ingestBlockedSubdomain.body.blockedBy.patternType, 'domain');
+        assert.equal(ingestBlockedSubdomain.body.blockedBy.pattern, 'ads.test');
+
+        const ingestScopedSenderOnOtherDomain = await request(baseUrl, '/v1/inbound/email', {
+            method: 'POST',
+            token: config.inboundAuthToken,
+            body: createMimeMessage({
+                to: 'alice@example.com',
+                subject: 'Scoped block does not apply here',
+                messageId: 'smoke-scoped-pass@partner.test',
+                text: 'Should be stored'
+            }),
+            headers: {
+                'Content-Type': 'message/rfc822',
+                'X-Email-Envelope-To': 'alice@example.com',
+                'X-Email-Envelope-From': 'scoped@partner.test',
+                'X-Email-Worker-Name': 'smoke-worker'
+            }
+        });
+        assertStatus(ingestScopedSenderOnOtherDomain, 202, 'domain-scoped block does not affect other domains');
+        assert.equal(ingestScopedSenderOnOtherDomain.body.blocked, false);
+        assert.ok(Number.isInteger(ingestScopedSenderOnOtherDomain.body.id));
+        const scopedPassEmailId = ingestScopedSenderOnOtherDomain.body.id;
+
+        const ingestScopedSenderOnBlockedDomain = await request(baseUrl, '/v1/inbound/email', {
+            method: 'POST',
+            token: config.inboundAuthToken,
+            body: createMimeMessage({
+                to: 'cleanup@cleanup.test',
+                subject: 'Scoped block applies here',
+                messageId: 'smoke-scoped-block@partner.test',
+                text: 'Should not be stored'
+            }),
+            headers: {
+                'Content-Type': 'message/rfc822',
+                'X-Email-Envelope-To': 'cleanup@cleanup.test',
+                'X-Email-Envelope-From': 'scoped@partner.test',
+                'X-Email-Worker-Name': 'smoke-worker'
+            }
+        });
+        assertStatus(ingestScopedSenderOnBlockedDomain, 202, 'domain-scoped block applies to its own domain');
+        assert.equal(ingestScopedSenderOnBlockedDomain.body.blocked, true);
+        assert.equal(ingestScopedSenderOnBlockedDomain.body.blockedBy.scope, 'domain');
+
+        const blockedExactAfterHits = await request(baseUrl, `/v1/blocked-senders/${blockExactSenderId}`, {
+            token: adminToken
+        });
+        assertStatus(blockedExactAfterHits, 200, 'read blocked sender after hits');
+        assert.equal(blockedExactAfterHits.body.blockedSender.matchCount, 1);
+        assert.ok(blockedExactAfterHits.body.blockedSender.lastMatchedAt);
+
+        const disableBlockedDomain = await request(baseUrl, `/v1/blocked-senders/${blockSenderDomainId}`, {
+            method: 'PATCH',
+            token: adminToken,
+            json: {
+                status: 'disabled'
+            }
+        });
+        assertStatus(disableBlockedDomain, 200, 'disable blocked sender domain');
+        assert.equal(disableBlockedDomain.body.blockedSender.status, 'disabled');
+
+        const ingestAfterDisable = await request(baseUrl, '/v1/inbound/email', {
+            method: 'POST',
+            token: config.inboundAuthToken,
+            body: createMimeMessage({
+                to: 'alice@example.com',
+                subject: 'Allowed after disabling block',
+                messageId: 'smoke-unblocked@mail.ads.test',
+                text: 'Should be stored now'
+            }),
+            headers: {
+                'Content-Type': 'message/rfc822',
+                'X-Email-Envelope-To': 'alice@example.com',
+                'X-Email-Envelope-From': 'promo@mail.ads.test',
+                'X-Email-Worker-Name': 'smoke-worker'
+            }
+        });
+        assertStatus(ingestAfterDisable, 202, 'ingest after disabling block');
+        assert.equal(ingestAfterDisable.body.blocked, false);
+        assert.ok(Number.isInteger(ingestAfterDisable.body.id));
+
+        // Blocked mail must never reach the notification pipeline; only the two
+        // deliberately-allowed messages above may have queued anything.
+        const blockedIngestTelegramCalls = fakeTelegram.calls
+            .slice(telegramCallsBeforeBlockedIngest)
+            .filter(call => call.method === 'sendMessage');
+        assert.ok(
+            blockedIngestTelegramCalls.length <= 2,
+            `blocked emails must not notify Telegram, saw ${blockedIngestTelegramCalls.length} sendMessage calls`
+        );
+
+        // Drop the two allowed messages so later inbox assertions keep their counts.
+        const cleanupBlockedSenderFixtures = await request(baseUrl, '/v1/emails/bulk-delete', {
+            method: 'POST',
+            token: adminToken,
+            json: {
+                emailIds: [scopedPassEmailId, ingestAfterDisable.body.id]
+            }
+        });
+        assertStatus(cleanupBlockedSenderFixtures, 200, 'cleanup blocked sender fixture emails');
+        assert.equal(cleanupBlockedSenderFixtures.body.deleted, 2);
+
+        const listBlockedSenders = await request(baseUrl, '/v1/blocked-senders?patternType=email', {
+            token: adminToken
+        });
+        assertStatus(listBlockedSenders, 200, 'list blocked senders filtered by pattern type');
+        assert.equal(listBlockedSenders.body.total, 2);
+        assert.ok(listBlockedSenders.body.blockedSenders.every(item => item.patternType === 'email'));
+
+        const listGlobalBlockedSenders = await request(baseUrl, '/v1/blocked-senders?scope=global', {
+            token: adminToken
+        });
+        assertStatus(listGlobalBlockedSenders, 200, 'list global blocked senders');
+        assert.ok(listGlobalBlockedSenders.body.blockedSenders.every(item => item.scope === 'global'));
+
+        const deleteScopedBlockedSender = await request(baseUrl, `/v1/blocked-senders/${blockScopedSenderId}`, {
+            method: 'DELETE',
+            token: adminToken
+        });
+        assertStatus(deleteScopedBlockedSender, 200, 'delete scoped blocked sender');
+
+        const readDeletedBlockedSender = await request(baseUrl, `/v1/blocked-senders/${blockScopedSenderId}`, {
+            token: adminToken
+        });
+        assertStatus(readDeletedBlockedSender, 404, 'deleted blocked sender is gone');
+
         const aliceLogin = await request(baseUrl, '/v1/auth/login', {
             method: 'POST',
             json: {
@@ -1018,6 +1242,36 @@ async function main() {
         assert.ok(allowedEmailId);
         const firstAliceReceivedAt = aliceInbox.body.emails[0].receivedAt;
         assert.ok(firstAliceReceivedAt);
+
+        // Danh sách phải trả preview ngắn thay vì full body, nếu không payload
+        // phình theo số mail và UI giật khi hộp thư lớn.
+        const inboxListedEmail = aliceInbox.body.emails[0];
+        assert.equal('text' in inboxListedEmail, false, 'inbox list must not embed full text body');
+        assert.equal('html' in inboxListedEmail, false, 'inbox list must not embed full html body');
+        assert.equal(typeof inboxListedEmail.preview, 'string');
+        assert.ok(inboxListedEmail.preview.length <= 400, 'preview must stay bounded');
+        assert.equal(inboxListedEmail.hasText, true);
+        assert.equal(typeof inboxListedEmail.hasHtml, 'boolean');
+
+        const aliceEmailListShape = await request(baseUrl, '/v1/emails?limit=5', {
+            token: aliceToken
+        });
+        assertStatus(aliceEmailListShape, 200, 'alice email list shape');
+        assert.ok(aliceEmailListShape.body.emails.length >= 1);
+        for (const listedEmail of aliceEmailListShape.body.emails) {
+            assert.equal('text' in listedEmail, false, 'email list must not embed full text body');
+            assert.equal('html' in listedEmail, false, 'email list must not embed full html body');
+            assert.equal(typeof listedEmail.preview, 'string');
+        }
+
+        // Chi tiết vẫn phải trả body đầy đủ để modal render được.
+        const aliceEmailDetail = await request(baseUrl, `/v1/emails/${allowedEmailId}`, {
+            token: aliceToken
+        });
+        assertStatus(aliceEmailDetail, 200, 'alice email detail keeps full body');
+        assert.equal(typeof aliceEmailDetail.body.email.text, 'string');
+        assert.ok(aliceEmailDetail.body.email.text.includes('Hello Alice'));
+        assert.equal(typeof aliceEmailDetail.body.email.html, 'string');
         const firstAliceReceivedAtMs = Date.parse(firstAliceReceivedAt);
         assert.ok(Number.isFinite(firstAliceReceivedAtMs));
 

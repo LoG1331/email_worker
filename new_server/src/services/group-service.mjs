@@ -472,6 +472,8 @@ export async function listGroupEmails(config, auth, groupId, pagination = {}) {
     const batchResult = await getAuthorizedEmailsByIds(config, auth, emailIds, {
         allowEmpty: true,
         includeRawMime,
+        // Body chỉ cần khi caller xin luôn raw MIME; bình thường đây là danh sách.
+        includeBody: includeRawMime,
         permission: 'view',
         userId: group.owner_user_id
     });

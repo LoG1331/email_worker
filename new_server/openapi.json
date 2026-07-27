@@ -36,6 +36,9 @@
       "name": "Emails"
     },
     {
+      "name": "BlockedSenders"
+    },
+    {
       "name": "Inboxes"
     },
     {
@@ -475,6 +478,7 @@
       },
       "Email": {
         "type": "object",
+        "description": "Email đầy đủ kèm text/html body, trả bởi route chi tiết.",
         "required": [
           "id",
           "to",
@@ -483,8 +487,6 @@
           "envelopeFrom",
           "from",
           "subject",
-          "text",
-          "html",
           "workerName",
           "sourceDomain",
           "messageId",
@@ -492,7 +494,12 @@
           "createdAt",
           "hasRawMime",
           "rawMimeSize",
-          "groupCount"
+          "groupCount",
+          "text",
+          "html",
+          "preview",
+          "hasText",
+          "hasHtml"
         ],
         "properties": {
           "id": {
@@ -515,12 +522,6 @@
             "$ref": "#/components/schemas/EmailSender"
           },
           "subject": {
-            "type": "string"
-          },
-          "text": {
-            "type": "string"
-          },
-          "html": {
             "type": "string"
           },
           "workerName": {
@@ -548,6 +549,22 @@
           },
           "groupCount": {
             "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          },
+          "html": {
+            "type": "string"
+          },
+          "preview": {
+            "type": "string",
+            "description": "Trích 400 ký tự đầu của text body, dùng để render dòng danh sách"
+          },
+          "hasText": {
+            "type": "boolean"
+          },
+          "hasHtml": {
+            "type": "boolean"
           },
           "rawMime": {
             "type": "string",
@@ -680,7 +697,7 @@
       "GroupEmail": {
         "allOf": [
           {
-            "$ref": "#/components/schemas/Email"
+            "$ref": "#/components/schemas/EmailSummary"
           },
           {
             "type": "object",
@@ -1170,6 +1187,277 @@
           },
           "requestId": {
             "$ref": "#/components/schemas/RequestId"
+          }
+        }
+      },
+      "BlockedSenderCreatedBy": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "userId": {
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "BlockedSender": {
+        "type": "object",
+        "required": [
+          "id",
+          "patternType",
+          "pattern",
+          "scope",
+          "domain",
+          "reason",
+          "status",
+          "matchCount",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "patternType": {
+            "type": "string",
+            "enum": [
+              "email",
+              "domain"
+            ],
+            "description": "domain also blocks every subdomain of the pattern"
+          },
+          "pattern": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "domain"
+            ],
+            "description": "domain scope only blocks mail arriving at the linked recipient domain"
+          },
+          "domain": {
+            "type": "string",
+            "nullable": true,
+            "description": "Recipient domain the rule is restricted to, null for global rules"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled"
+            ]
+          },
+          "matchCount": {
+            "type": "integer"
+          },
+          "lastMatchedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdBy": {
+            "$ref": "#/components/schemas/BlockedSenderCreatedBy"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BlockedSenderCreateRequest": {
+        "type": "object",
+        "required": [
+          "pattern"
+        ],
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "description": "Sender address (user@example.com) or sender domain (example.com)"
+          },
+          "patternType": {
+            "type": "string",
+            "enum": [
+              "email",
+              "domain"
+            ],
+            "description": "Inferred from pattern when omitted"
+          },
+          "domain": {
+            "type": "string",
+            "nullable": true,
+            "description": "Restrict the rule to a single recipient domain"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled"
+            ]
+          }
+        }
+      },
+      "BlockedSenderUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string"
+          },
+          "patternType": {
+            "type": "string",
+            "enum": [
+              "email",
+              "domain"
+            ]
+          },
+          "domain": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled"
+            ]
+          }
+        }
+      },
+      "BlockedSenderMatch": {
+        "type": "object",
+        "description": "Present only when the inbound email was rejected by a blocked sender rule",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "patternType": {
+            "type": "string",
+            "enum": [
+              "email",
+              "domain"
+            ]
+          },
+          "pattern": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "domain"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "sender": {
+            "type": "string"
+          }
+        }
+      },
+      "EmailSummary": {
+        "type": "object",
+        "description": "Bản rút gọn dùng cho danh sách; không kèm text/html đầy đủ để payload không phình theo số mail. Gọi GET /v1/emails/{id} để lấy nội dung đầy đủ.",
+        "required": [
+          "id",
+          "to",
+          "localPart",
+          "domain",
+          "envelopeFrom",
+          "from",
+          "subject",
+          "workerName",
+          "sourceDomain",
+          "messageId",
+          "receivedAt",
+          "createdAt",
+          "hasRawMime",
+          "rawMimeSize",
+          "groupCount",
+          "preview",
+          "hasText",
+          "hasHtml"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "to": {
+            "type": "string"
+          },
+          "localPart": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "envelopeFrom": {
+            "type": "string",
+            "nullable": true
+          },
+          "from": {
+            "$ref": "#/components/schemas/EmailSender"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "workerName": {
+            "type": "string"
+          },
+          "sourceDomain": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "hasRawMime": {
+            "type": "boolean"
+          },
+          "rawMimeSize": {
+            "type": "integer"
+          },
+          "groupCount": {
+            "type": "integer"
+          },
+          "preview": {
+            "type": "string",
+            "description": "Trích 400 ký tự đầu của text body, dùng để render dòng danh sách"
+          },
+          "hasText": {
+            "type": "boolean"
+          },
+          "hasHtml": {
+            "type": "boolean"
           }
         }
       }
@@ -2850,7 +3138,7 @@
                     "emails": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Email"
+                        "$ref": "#/components/schemas/EmailSummary"
                       }
                     },
                     "hasMore": {
@@ -3145,7 +3433,7 @@
                     "emails": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Email"
+                        "$ref": "#/components/schemas/EmailSummary"
                       }
                     },
                     "hasMore": {
@@ -3772,7 +4060,7 @@
         ],
         "responses": {
           "202": {
-            "description": "Email accepted",
+            "description": "Email accepted; blocked senders are acknowledged but discarded",
             "content": {
               "application/json": {
                 "schema": {
@@ -3782,7 +4070,9 @@
                       "type": "boolean"
                     },
                     "id": {
-                      "type": "integer"
+                      "type": "integer",
+                      "nullable": true,
+                      "description": "null when the email was blocked and therefore not stored"
                     },
                     "envelopeTo": {
                       "type": "string"
@@ -3796,6 +4086,13 @@
                     },
                     "requestId": {
                       "$ref": "#/components/schemas/RequestId"
+                    },
+                    "blocked": {
+                      "type": "boolean",
+                      "description": "true when a blocked sender rule discarded the email"
+                    },
+                    "blockedBy": {
+                      "$ref": "#/components/schemas/BlockedSenderMatch"
                     }
                   }
                 }
@@ -4241,6 +4538,333 @@
                       "$ref": "#/components/schemas/RequestId"
                     }
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/blocked-senders": {
+      "get": {
+        "tags": [
+          "BlockedSenders"
+        ],
+        "summary": "List blocked senders",
+        "description": "Global admin only",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyHeader": []
+          },
+          {
+            "apiKeyAuthScheme": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "patternType",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "email",
+                "domain"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "disabled"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "global",
+                "domain"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Blocked sender list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "type": "integer"
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "blockedSenders": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BlockedSender"
+                      }
+                    },
+                    "requestId": {
+                      "$ref": "#/components/schemas/RequestId"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "BlockedSenders"
+        ],
+        "summary": "Block a sender",
+        "description": "Global admin only",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyHeader": []
+          },
+          {
+            "apiKeyAuthScheme": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlockedSenderCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Blocked sender created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "blockedSender": {
+                      "$ref": "#/components/schemas/BlockedSender"
+                    },
+                    "requestId": {
+                      "$ref": "#/components/schemas/RequestId"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Sender already blocked for the requested scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/blocked-senders/{blockedSenderId}": {
+      "get": {
+        "tags": [
+          "BlockedSenders"
+        ],
+        "summary": "Get blocked sender by ID",
+        "description": "Global admin only",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyHeader": []
+          },
+          {
+            "apiKeyAuthScheme": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "blockedSenderId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Blocked sender details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "blockedSender": {
+                      "$ref": "#/components/schemas/BlockedSender"
+                    },
+                    "requestId": {
+                      "$ref": "#/components/schemas/RequestId"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "BlockedSenders"
+        ],
+        "summary": "Update blocked sender",
+        "description": "Global admin only",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyHeader": []
+          },
+          {
+            "apiKeyAuthScheme": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "blockedSenderId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlockedSenderUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Blocked sender updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "blockedSender": {
+                      "$ref": "#/components/schemas/BlockedSender"
+                    },
+                    "requestId": {
+                      "$ref": "#/components/schemas/RequestId"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "BlockedSenders"
+        ],
+        "summary": "Delete blocked sender",
+        "description": "Global admin only",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyHeader": []
+          },
+          {
+            "apiKeyAuthScheme": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "blockedSenderId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Blocked sender deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimpleSuccessResponse"
                 }
               }
             }

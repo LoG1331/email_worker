@@ -7,26 +7,26 @@ import {
   getPermission,
   listDomains,
   listPermissions,
-  listUsers,
 } from '../lib/api.js'
-import { cn, formatApiError, formatDateTime, getPermissionScopeLabel, normalizeOptional } from '../lib/format.js'
+import { cn, findIssueMessage, formatApiError, formatDateTime, getPermissionScopeLabel, normalizeOptional } from '../lib/format.js'
 import { clampOffset } from '../lib/pagination.js'
-import { AutoRefreshButton, Badge, Button, CompactPagination, Field, Input, ModalShell, Panel, Select } from '../components/ui.jsx'
+import { AutoRefreshButton, Badge, Button, CompactPagination, Field, FormError, ModalShell, Panel, Select } from '../components/ui.jsx'
+import UserPicker from '../components/UserPicker.jsx'
 import { useAutoRefresh } from '../hooks/useAutoRefresh.js'
 
 const STATUS_OPTIONS = ['active', 'disabled']
 const COMPACT_INPUT_CLASS = 'min-h-[44px] rounded-[0.95rem] px-4 py-2.5 text-sm'
+const CREATE_HANDLED_FIELDS = ['userId', 'username', 'domain', 'status']
 
 function emptyPermissionCreateForm() {
   return {
     userId: '',
-    username: '',
     domain: '',
     status: 'active',
   }
 }
 
-function PermissionCreateModal({ open, users, domains, form, saving, onChange, onSubmit, onClose }) {
+function PermissionCreateModal({ open, token, domains, form, saving, error, onChange, onSubmit, onClose }) {
   return (
     <ModalShell
       open={open}
@@ -37,46 +37,37 @@ function PermissionCreateModal({ open, users, domains, form, saving, onChange, o
       size="lg"
     >
       <form className="grid gap-4 md:grid-cols-2" onSubmit={onSubmit}>
-        <Field label="User ID" hint="Điền userId hoặc username">
-          <Input
+        <FormError error={error} handledFields={CREATE_HANDLED_FIELDS} className="md:col-span-2" />
+        <UserPicker
+          token={token}
+          value={form.userId}
+          onChange={(userId) => onChange((current) => ({ ...current, userId }))}
+          hint="Chọn từ danh sách"
+          error={findIssueMessage(error, ['userId', 'username'])}
+        />
+        <Field
+          label="Domain"
+          hint="Chọn domain cần cấp quyền"
+          error={findIssueMessage(error, 'domain')}
+        >
+          <Select
             className={COMPACT_INPUT_CLASS}
-            value={form.userId}
-            onChange={(event) => onChange((current) => ({ ...current, userId: event.target.value }))}
-            placeholder="12"
-          />
-        </Field>
-        <Field label="Username" hint="Có gợi ý, không bị giới hạn 200 dòng">
-          <Input
-            className={COMPACT_INPUT_CLASS}
-            list="permission-user-suggestions"
-            value={form.username}
-            onChange={(event) => onChange((current) => ({ ...current, username: event.target.value }))}
-            placeholder="alice"
-          />
-          <datalist id="permission-user-suggestions">
-            {users.map((user) => (
-              <option key={user.id} value={user.username}>
-                {user.displayName ? `${user.username} · ${user.displayName}` : user.username}
-              </option>
-            ))}
-          </datalist>
-        </Field>
-        <Field label="Domain" hint="Có gợi ý, vẫn có thể gõ tay">
-          <Input
-            className={COMPACT_INPUT_CLASS}
-            list="permission-domain-suggestions"
             value={form.domain}
+            invalid={Boolean(findIssueMessage(error, 'domain'))}
             onChange={(event) => onChange((current) => ({ ...current, domain: event.target.value }))}
-            placeholder="example.com"
-          />
-          <datalist id="permission-domain-suggestions">
+          >
+            <option value="">Chọn domain</option>
             {domains.map((domain) => (
-              <option key={domain.domain} value={domain.domain} />
+              <option key={domain.domain} value={domain.domain}>{domain.domain}</option>
             ))}
-          </datalist>
+          </Select>
         </Field>
-        <Field label="Trạng thái">
-          <Select value={form.status} onChange={(event) => onChange((current) => ({ ...current, status: event.target.value }))}>
+        <Field label="Trạng thái" error={findIssueMessage(error, 'status')}>
+          <Select
+            className={COMPACT_INPUT_CLASS}
+            value={form.status}
+            onChange={(event) => onChange((current) => ({ ...current, status: event.target.value }))}
+          >
             {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
           </Select>
         </Field>
@@ -94,6 +85,7 @@ function PermissionDetailModal({
   permission,
   loading,
   deleting,
+  error,
   onDelete,
   onClose,
 }) {
@@ -109,6 +101,7 @@ function PermissionDetailModal({
     >
       {permission ? (
         <div className="space-y-5">
+          <FormError error={error} />
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-[1.25rem] border border-[var(--line)] bg-white/80 p-4">
               <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--muted)]">Người dùng</p>
@@ -158,7 +151,6 @@ export default function PermissionsView({ token }) {
     limit: 50,
     offset: 0,
   })
-  const [userOptions, setUserOptions] = useState([])
   const [domainOptions, setDomainOptions] = useState([])
   const [permissions, setPermissions] = useState([])
   const [totalPermissions, setTotalPermissions] = useState(0)
@@ -170,14 +162,12 @@ export default function PermissionsView({ token }) {
   const [creatingPermission, setCreatingPermission] = useState(false)
   const [deletingPermission, setDeletingPermission] = useState(false)
   const [createForm, setCreateForm] = useState(emptyPermissionCreateForm())
+  const [createError, setCreateError] = useState(null)
+  const [detailError, setDetailError] = useState(null)
 
   async function loadOptions({ showError = true } = {}) {
     try {
-      const [usersResponse, domainsResponse] = await Promise.all([
-        listUsers(token, { limit: 200, offset: 0 }),
-        listDomains(token, { limit: 200, offset: 0 }),
-      ])
-      setUserOptions(usersResponse.users)
+      const domainsResponse = await listDomains(token, { limit: 200, offset: 0 })
       setDomainOptions(domainsResponse.domains)
     } catch (error) {
       if (showError) {
@@ -284,15 +274,21 @@ export default function PermissionsView({ token }) {
     }
   }, 10000)
 
+  function openCreateModal() {
+    setCreateError(null)
+    setCreateForm(emptyPermissionCreateForm())
+    setCreateModalOpen(true)
+  }
+
   async function handleCreate(event) {
     event.preventDefault()
     setCreatingPermission(true)
+    setCreateError(null)
 
     try {
       const response = await createPermission(token, {
-        ...createForm,
+        status: createForm.status,
         userId: normalizeOptional(createForm.userId),
-        username: normalizeOptional(createForm.username),
         domain: normalizeOptional(createForm.domain),
       })
       toast.success('Đã tạo quyền')
@@ -307,7 +303,7 @@ export default function PermissionsView({ token }) {
       await loadPermissions(response.permission.id, nextFilters, { showLoading: false, showError: false })
       await loadPermissionDetail(response.permission.id, { showLoading: false, showError: false })
     } catch (error) {
-      toast.error(formatApiError(error))
+      setCreateError(error)
     } finally {
       setCreatingPermission(false)
     }
@@ -319,6 +315,7 @@ export default function PermissionsView({ token }) {
     }
 
     setDeletingPermission(true)
+    setDetailError(null)
 
     try {
       await deletePermission(token, selectedPermissionId)
@@ -327,7 +324,7 @@ export default function PermissionsView({ token }) {
       setSelectedPermission(null)
       await loadPermissions(null, filters, { showLoading: false, showError: false })
     } catch (error) {
-      toast.error(formatApiError(error))
+      setDetailError(error)
     } finally {
       setDeletingPermission(false)
     }
@@ -347,20 +344,12 @@ export default function PermissionsView({ token }) {
           </div>
 
           <div className="grid gap-3 rounded-[1.4rem] border border-[var(--line)] bg-white/66 p-3 sm:grid-cols-2 xl:grid-cols-3">
-            <Field label="Người dùng">
-              <Select
-                className={COMPACT_INPUT_CLASS}
-                value={filters.userId}
-                onChange={(event) => setFilters((current) => ({ ...current, userId: event.target.value, offset: 0 }))}
-              >
-                <option value="">Tất cả người dùng</option>
-                {userOptions.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    @{user.username}{user.displayName ? ` · ${user.displayName}` : ''}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            <UserPicker
+              token={token}
+              value={filters.userId}
+              placeholder="Tất cả người dùng"
+              onChange={(userId) => setFilters((current) => ({ ...current, userId, offset: 0 }))}
+            />
             <Field label="Domain">
               <Select
                 className={COMPACT_INPUT_CLASS}
@@ -399,7 +388,7 @@ export default function PermissionsView({ token }) {
               onPrev={() => setFilters((current) => ({ ...current, offset: Math.max(0, current.offset - current.limit) }))}
               onNext={() => setFilters((current) => ({ ...current, offset: current.offset + current.limit }))}
             />
-            <Button size="sm" icon={ShieldPlus} onClick={() => setCreateModalOpen(true)}>
+            <Button size="sm" icon={ShieldPlus} onClick={openCreateModal}>
               Tạo quyền
             </Button>
           </div>
@@ -499,13 +488,17 @@ export default function PermissionsView({ token }) {
 
       <PermissionCreateModal
         open={createModalOpen}
-        users={userOptions}
+        token={token}
         domains={domainOptions}
         form={createForm}
         saving={creatingPermission}
+        error={createError}
         onChange={setCreateForm}
         onSubmit={handleCreate}
-        onClose={() => setCreateModalOpen(false)}
+        onClose={() => {
+          setCreateModalOpen(false)
+          setCreateError(null)
+        }}
       />
 
       <PermissionDetailModal
@@ -513,10 +506,12 @@ export default function PermissionsView({ token }) {
         permission={selectedPermission}
         loading={loadingDetail}
         deleting={deletingPermission}
+        error={detailError}
         onDelete={handleDelete}
         onClose={() => {
           setSelectedPermissionId(null)
           setSelectedPermission(null)
+          setDetailError(null)
         }}
       />
     </div>

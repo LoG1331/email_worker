@@ -12,9 +12,9 @@ import {
   removeGroupEmail,
   updateGroup,
 } from '../lib/api.js'
-import { cn, formatApiError, formatDateTime, truncate } from '../lib/format.js'
+import { cn, findIssueMessage, formatApiError, formatDateTime, truncate } from '../lib/format.js'
 import { clampOffset } from '../lib/pagination.js'
-import { AutoRefreshButton, Badge, Button, Checkbox, CompactPagination, CursorPagination, Field, Input, ModalShell, Panel, TextArea } from '../components/ui.jsx'
+import { AutoRefreshButton, Badge, Button, Checkbox, CompactPagination, CursorPagination, Field, FormError, Input, ModalShell, Panel, TextArea } from '../components/ui.jsx'
 import { useAutoRefresh } from '../hooks/useAutoRefresh.js'
 import { useCursorPager } from '../hooks/useCursorPager.js'
 
@@ -52,7 +52,9 @@ function parseEmailAddressList(value) {
   )]
 }
 
-function GroupCreateModal({ open, form, onChange, onSubmit, onClose }) {
+function GroupCreateModal({ open, form, saving, error, onChange, onSubmit, onClose }) {
+  const nameError = findIssueMessage(error, 'name')
+
   return (
     <ModalShell
       open={open}
@@ -63,15 +65,16 @@ function GroupCreateModal({ open, form, onChange, onSubmit, onClose }) {
       size="md"
     >
       <form className="grid gap-4" onSubmit={onSubmit}>
-        <Field label="Tên nhóm">
-          <Input className={COMPACT_INPUT_CLASS} value={form.name} onChange={(event) => onChange((current) => ({ ...current, name: event.target.value }))} />
+        <FormError error={error} handledFields={['name', 'color', 'description']} />
+        <Field label="Tên nhóm" error={nameError}>
+          <Input className={COMPACT_INPUT_CLASS} invalid={Boolean(nameError)} value={form.name} onChange={(event) => onChange((current) => ({ ...current, name: event.target.value }))} />
         </Field>
         <GroupColorPicker value={form.color} onChange={(value) => onChange((current) => ({ ...current, color: value }))} />
-        <Field label="Mô tả">
+        <Field label="Mô tả" error={findIssueMessage(error, 'description')}>
           <TextArea className={COMPACT_INPUT_CLASS} rows={3} value={form.description} onChange={(event) => onChange((current) => ({ ...current, description: event.target.value }))} />
         </Field>
         <div className="flex flex-wrap gap-2">
-          <Button type="submit" size="sm" icon={Plus}>Tạo nhóm</Button>
+          <Button type="submit" size="sm" icon={Plus} loading={saving}>Tạo nhóm</Button>
           <Button type="button" size="sm" variant="ghost" onClick={onClose}>Đóng</Button>
         </div>
       </form>
@@ -208,6 +211,8 @@ function GroupDetailModal({
   groupHasPrev,
   editForm,
   appendMailboxes,
+  editError,
+  appendError,
   onChangeGroup,
   onSubmitGroup,
   onDeleteGroup,
@@ -275,11 +280,13 @@ function GroupDetailModal({
               </div>
 
               <div className="grid gap-3">
+                <FormError error={editError} handledFields={['name', 'color', 'description']} />
                 <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
-                  <Field label="Tên nhóm">
+                  <Field label="Tên nhóm" error={findIssueMessage(editError, 'name')}>
                     <Input
                       className={COMPACT_INPUT_CLASS}
                       value={editForm.name}
+                      invalid={Boolean(findIssueMessage(editError, 'name'))}
                       onChange={(event) => onChangeGroup((current) => ({ ...current, name: event.target.value }))}
                     />
                   </Field>
@@ -346,9 +353,11 @@ function GroupDetailModal({
                   <Input
                     className={COMPACT_INPUT_CLASS}
                     value={appendMailboxes}
+                    invalid={Boolean(appendError)}
                     onChange={(event) => onChangeAppendMailboxes(event.target.value)}
                     placeholder="alice@example.com, bob@example.com"
                   />
+                  <FormError error={appendError} />
                   <div className="flex flex-wrap gap-2">
                     <Button type="submit" size="sm" variant="secondary">Thêm vào nhóm</Button>
                   </div>
@@ -432,6 +441,10 @@ export default function GroupsView({ token }) {
     description: '',
   })
   const [appendMailboxes, setAppendMailboxes] = useState('')
+  const [creatingGroup, setCreatingGroup] = useState(false)
+  const [createError, setCreateError] = useState(null)
+  const [editError, setEditError] = useState(null)
+  const [appendError, setAppendError] = useState(null)
   const [groupListFilters, setGroupListFilters] = useState({
     limit: 50,
     offset: 0,
@@ -610,6 +623,8 @@ export default function GroupsView({ token }) {
 
   async function handleCreate(event) {
     event.preventDefault()
+    setCreatingGroup(true)
+    setCreateError(null)
 
     try {
       const response = await createGroup(token, createForm)
@@ -627,7 +642,9 @@ export default function GroupsView({ token }) {
         showLoading: false,
       })
     } catch (error) {
-      toast.error(formatApiError(error))
+      setCreateError(error)
+    } finally {
+      setCreatingGroup(false)
     }
   }
 
@@ -638,6 +655,8 @@ export default function GroupsView({ token }) {
       return
     }
 
+    setEditError(null)
+
     try {
       await updateGroup(token, selectedGroupId, editForm)
       toast.success('Đã cập nhật nhóm')
@@ -646,7 +665,7 @@ export default function GroupsView({ token }) {
         showLoading: false,
       })
     } catch (error) {
-      toast.error(formatApiError(error))
+      setEditError(error)
     }
   }
 
@@ -655,12 +674,14 @@ export default function GroupsView({ token }) {
       return
     }
 
+    setEditError(null)
+
     try {
       await deleteGroup(token, selectedGroupId)
       toast.success('Đã xóa nhóm')
       await loadGroups(null, groupListFilters)
     } catch (error) {
-      toast.error(formatApiError(error))
+      setEditError(error)
     }
   }
 
@@ -671,9 +692,11 @@ export default function GroupsView({ token }) {
       return
     }
 
+    setAppendError(null)
+
     const emailAddresses = parseEmailAddressList(appendMailboxes)
     if (!emailAddresses.length) {
-      toast.error('Nhập ít nhất một hộp thư')
+      setAppendError(new Error('Nhập ít nhất một hộp thư'))
       return
     }
 
@@ -687,7 +710,7 @@ export default function GroupsView({ token }) {
         showLoading: false,
       })
     } catch (error) {
-      toast.error(formatApiError(error))
+      setAppendError(error)
     }
   }
 
@@ -786,9 +809,14 @@ export default function GroupsView({ token }) {
       <GroupCreateModal
         open={createModalOpen}
         form={createForm}
+        saving={creatingGroup}
+        error={createError}
         onChange={setCreateForm}
         onSubmit={handleCreate}
-        onClose={() => setCreateModalOpen(false)}
+        onClose={() => {
+          setCreateModalOpen(false)
+          setCreateError(null)
+        }}
       />
 
       <GroupDetailModal
@@ -808,6 +836,8 @@ export default function GroupsView({ token }) {
         groupHasPrev={groupEmailPager.hasPrev}
         editForm={editForm}
         appendMailboxes={appendMailboxes}
+        editError={editError}
+        appendError={appendError}
         onChangeGroup={setEditForm}
         onSubmitGroup={handleUpdate}
         onDeleteGroup={handleDelete}
@@ -827,6 +857,8 @@ export default function GroupsView({ token }) {
           setGroupEmailState({ count: 0, hasMore: false })
           setRegistrations([])
           setTotalRegistrations(0)
+          setEditError(null)
+          setAppendError(null)
           groupEmailPager.reset()
         }}
       />

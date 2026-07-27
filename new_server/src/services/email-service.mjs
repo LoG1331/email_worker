@@ -1,5 +1,6 @@
 import { maybePruneStoredRawMime, getDb, vacuumDatabase, withTransaction } from '../db/index.mjs';
 import { hasGlobalPermission } from './account-service.mjs';
+import { findBlockingRuleTx, recordBlockedSenderHitTx } from './blocked-sender-service.mjs';
 import { enqueueInboundEmailNotification, processTelegramOutbox } from '../telegram/notifications.mjs';
 import { normalizeDomain, parseEmailAddress, parseEnvelopeAddress } from '../utils/email.mjs';
 import { HttpError } from '../utils/http.mjs';
@@ -189,7 +190,22 @@ function groupCountJoinSql() {
     `;
 }
 
-function baseEmailSelect({ includeRawMime = false } = {}) {
+// Danh sách chỉ cần đủ chữ để render dòng preview; kéo cả body vào mỗi dòng
+// làm payload phình lên hàng trăm KB và khiến UI giật khi hộp thư nhiều mail.
+const EMAIL_PREVIEW_LENGTH = 400;
+
+function baseEmailSelect({ includeRawMime = false, includeBody = true } = {}) {
+    const bodyColumns = includeBody
+        ? `
+            e.text_body,
+            e.html_body,
+        `
+        : `
+            SUBSTR(e.text_body, 1, ${EMAIL_PREVIEW_LENGTH}) AS text_preview,
+            LENGTH(e.text_body) AS text_body_size,
+            LENGTH(e.html_body) AS html_body_size,
+        `;
+
     return `
         SELECT
             e.id,
@@ -200,8 +216,7 @@ function baseEmailSelect({ includeRawMime = false } = {}) {
             e.envelope_from,
             e.sender_json,
             e.subject,
-            e.text_body,
-            e.html_body,
+            ${bodyColumns}
             e.worker_name,
             e.source_domain,
             e.message_id,
@@ -213,7 +228,7 @@ function baseEmailSelect({ includeRawMime = false } = {}) {
     `;
 }
 
-function mapEmailRow(row, includeRawMime = false) {
+function mapEmailRow(row, includeRawMime = false, includeBody = true) {
     const email = {
         id: row.id,
         to: row.recipient_address,
@@ -222,8 +237,6 @@ function mapEmailRow(row, includeRawMime = false) {
         envelopeFrom: row.envelope_from,
         from: parseSenderJson(row.sender_json),
         subject: row.subject,
-        text: row.text_body,
-        html: row.html_body,
         workerName: row.worker_name,
         sourceDomain: row.source_domain,
         messageId: row.message_id,
@@ -234,6 +247,18 @@ function mapEmailRow(row, includeRawMime = false) {
         groupCount: row.group_count || 0
     };
 
+    if (includeBody) {
+        email.text = row.text_body;
+        email.html = row.html_body;
+        email.preview = String(row.text_body || '').slice(0, EMAIL_PREVIEW_LENGTH);
+        email.hasText = Boolean(row.text_body);
+        email.hasHtml = Boolean(row.html_body);
+    } else {
+        email.preview = row.text_preview || '';
+        email.hasText = Boolean(row.text_body_size);
+        email.hasHtml = Boolean(row.html_body_size);
+    }
+
     if (includeRawMime) {
         email.rawMime = row.raw_mime ? Buffer.from(row.raw_mime).toString('base64') : null;
     }
@@ -241,8 +266,8 @@ function mapEmailRow(row, includeRawMime = false) {
     return email;
 }
 
-function mapRowsById(rows, includeRawMime = false) {
-    return new Map(rows.map(row => [row.id, mapEmailRow(row, includeRawMime)]));
+function mapRowsById(rows, includeRawMime = false, includeBody = true) {
+    return new Map(rows.map(row => [row.id, mapEmailRow(row, includeRawMime, includeBody)]));
 }
 
 function buildInPlaceholders(values) {
@@ -549,7 +574,7 @@ async function getDomainForIngress(db, config, domainName) {
     return db.get(`SELECT * FROM domains WHERE id = ? LIMIT 1`, [result.lastID]);
 }
 
-async function fetchEmailRowsByIds(db, emailIds, { includeRawMime = false } = {}) {
+async function fetchEmailRowsByIds(db, emailIds, { includeRawMime = false, includeBody = true } = {}) {
     if (!emailIds.length) {
         return [];
     }
@@ -557,7 +582,7 @@ async function fetchEmailRowsByIds(db, emailIds, { includeRawMime = false } = {}
     const placeholders = buildInPlaceholders(emailIds);
     return db.all(
         `
-            ${baseEmailSelect({ includeRawMime })}
+            ${baseEmailSelect({ includeRawMime, includeBody })}
             FROM emails e
             ${groupCountJoinSql()}
             WHERE e.id IN (${placeholders})
@@ -568,6 +593,7 @@ async function fetchEmailRowsByIds(db, emailIds, { includeRawMime = false } = {}
 
 async function fetchAccessibleEmailRowsByIds(db, userId, emailIds, permission = 'view', {
     includeRawMime = false,
+    includeBody = true,
     requireRegistration = true
 } = {}) {
     if (!emailIds.length) {
@@ -580,7 +606,7 @@ async function fetchAccessibleEmailRowsByIds(db, userId, emailIds, permission = 
     });
     return db.all(
         `
-            ${baseEmailSelect({ includeRawMime })}
+            ${baseEmailSelect({ includeRawMime, includeBody })}
             FROM emails e
             ${groupCountJoinSql()}
             WHERE e.id IN (${placeholders})
@@ -588,6 +614,28 @@ async function fetchAccessibleEmailRowsByIds(db, userId, emailIds, permission = 
         `,
         [...emailIds, ...visibility.values]
     );
+}
+
+function collectSenderCandidates(payload) {
+    return [...new Set(
+        [cleanText(payload.envelopeFrom), cleanText(payload.senderJson?.address)]
+            .map(value => value.toLowerCase())
+            .filter(Boolean)
+    )];
+}
+
+async function findBlockedSenderForIngressTx(db, payload, domainId) {
+    for (const senderAddress of collectSenderCandidates(payload)) {
+        const rule = await findBlockingRuleTx(db, senderAddress, domainId);
+        if (rule) {
+            return {
+                ...rule,
+                sender: senderAddress
+            };
+        }
+    }
+
+    return null;
 }
 
 export async function ingestInboundEmail(config, payload) {
@@ -602,6 +650,27 @@ export async function ingestInboundEmail(config, payload) {
 
     const result = await withTransaction(config, async (db) => {
         const domain = await getDomainForIngress(db, config, envelope.domain);
+        const blockedRule = await findBlockedSenderForIngressTx(db, payload, domain.id);
+        if (blockedRule) {
+            await recordBlockedSenderHitTx(db, blockedRule.id, receivedAt);
+
+            return {
+                id: null,
+                blocked: true,
+                blockedBy: {
+                    id: blockedRule.id,
+                    patternType: blockedRule.patternType,
+                    pattern: blockedRule.pattern,
+                    scope: blockedRule.scope,
+                    reason: blockedRule.reason,
+                    sender: blockedRule.sender
+                },
+                envelopeTo: envelope.email,
+                domain: domain.name,
+                receivedAt
+            };
+        }
+
         const insertResult = await db.run(
             `
                 INSERT INTO emails (
@@ -642,11 +711,16 @@ export async function ingestInboundEmail(config, payload) {
 
         return {
             id: insertResult.lastID,
+            blocked: false,
             envelopeTo: envelope.email,
             domain: domain.name,
             receivedAt
         };
     });
+
+    if (result.blocked) {
+        return result;
+    }
 
     void maybePruneStoredRawMime(config).catch(error => {
         console.error('Background prune failed:', error);
@@ -730,7 +804,7 @@ export async function listEmails(config, auth, filters = {}) {
     const whereClause = allConditions.length ? `WHERE ${allConditions.join(' AND ')}` : '';
     const rows = await db.all(
         `
-            ${baseEmailSelect()}
+            ${baseEmailSelect({ includeBody: false })}
             FROM emails e
             ${groupCountJoinSql()}
             ${whereClause}
@@ -743,7 +817,7 @@ export async function listEmails(config, auth, filters = {}) {
     const page = buildCursorPage(
         rows,
         limit,
-        row => mapEmailRow(row),
+        row => mapEmailRow(row, false, false),
         row => encodeCursor({ receivedAt: row.received_at, id: row.id })
     );
 
@@ -776,7 +850,7 @@ export async function getInboxByAddress(config, emailAddress, options = {}) {
     const cursorClause = buildEmailCursorSql(cursor, 'e');
     const rows = await db.all(
         `
-            ${baseEmailSelect()}
+            ${baseEmailSelect({ includeBody: false })}
             FROM emails e
             ${groupCountJoinSql()}
             WHERE ${conditions.join(' AND ')}${cursorClause.clause}
@@ -789,7 +863,7 @@ export async function getInboxByAddress(config, emailAddress, options = {}) {
     const page = buildCursorPage(
         rows,
         limit,
-        row => mapEmailRow(row),
+        row => mapEmailRow(row, false, false),
         row => encodeCursor({ receivedAt: row.received_at, id: row.id })
     );
 
@@ -829,6 +903,7 @@ export async function getAuthorizedEmailsByIds(config, auth, emailIds, options =
 
     const db = await getDb(config);
     const includeRawMime = options.includeRawMime === true;
+    const includeBody = options.includeBody !== false;
     const permission = options.permission || 'view';
     const subjectUserId = options.userId === undefined || options.userId === null
         ? null
@@ -844,7 +919,7 @@ export async function getAuthorizedEmailsByIds(config, auth, emailIds, options =
             normalizedEmailIds
         ),
         bypassVisibility
-            ? fetchEmailRowsByIds(db, normalizedEmailIds, { includeRawMime })
+            ? fetchEmailRowsByIds(db, normalizedEmailIds, { includeRawMime, includeBody })
             : fetchAccessibleEmailRowsByIds(
                 db,
                 subjectUserId || auth?.userId || 0,
@@ -852,13 +927,14 @@ export async function getAuthorizedEmailsByIds(config, auth, emailIds, options =
                 permission,
                 {
                     includeRawMime,
+                    includeBody,
                     requireRegistration: options.requireRegistration !== false
                 }
             )
     ]);
 
     const existingIds = new Set(existingRows.map(row => row.id));
-    const accessibleById = mapRowsById(accessibleRows, includeRawMime);
+    const accessibleById = mapRowsById(accessibleRows, includeRawMime, includeBody);
     const emails = [];
     const missingIds = [];
     const deniedIds = [];

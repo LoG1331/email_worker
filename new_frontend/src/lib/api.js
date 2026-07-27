@@ -225,6 +225,37 @@ export function deleteDomain(token, domain) {
   })
 }
 
+export function listBlockedSenders(token, filters = {}) {
+  return request(withQuery('/v1/blocked-senders', filters), { token })
+}
+
+export function createBlockedSender(token, payload) {
+  return request('/v1/blocked-senders', {
+    method: 'POST',
+    token,
+    body: payload,
+  })
+}
+
+export function getBlockedSender(token, blockedSenderId) {
+  return request(`/v1/blocked-senders/${blockedSenderId}`, { token })
+}
+
+export function updateBlockedSender(token, blockedSenderId, payload) {
+  return request(`/v1/blocked-senders/${blockedSenderId}`, {
+    method: 'PATCH',
+    token,
+    body: payload,
+  })
+}
+
+export function deleteBlockedSender(token, blockedSenderId) {
+  return request(`/v1/blocked-senders/${blockedSenderId}`, {
+    method: 'DELETE',
+    token,
+  })
+}
+
 export function listEmailRegisters(token, filters = {}) {
   return request(withQuery('/v1/email-registers', filters), { token })
 }

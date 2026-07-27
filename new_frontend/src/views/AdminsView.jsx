@@ -2,15 +2,17 @@ import { useDeferredValue, useEffect, useState } from 'react'
 import { Crown, ShieldPlus, Trash2 } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import { grantAdmin, listAdmins, revokeAdmin } from '../lib/api.js'
-import { formatApiError, formatDateTime } from '../lib/format.js'
+import { findIssueMessage, formatApiError, formatDateTime } from '../lib/format.js'
 import { clampOffset } from '../lib/pagination.js'
 import DataTable from '../components/DataTable.jsx'
-import { AutoRefreshButton, Badge, Button, CompactPagination, Field, Input, ModalShell, Panel } from '../components/ui.jsx'
+import { AutoRefreshButton, Badge, Button, CompactPagination, Field, FormError, Input, ModalShell, Panel } from '../components/ui.jsx'
+import UserPicker from '../components/UserPicker.jsx'
 import { useAutoRefresh } from '../hooks/useAutoRefresh.js'
 
 const COMPACT_INPUT_CLASS = 'min-h-[44px] rounded-[0.95rem] px-4 py-2.5 text-sm'
+const GRANT_HANDLED_FIELDS = ['userId', 'username']
 
-function GrantAdminModal({ open, form, onChange, onSubmit, onClose }) {
+function GrantAdminModal({ open, token, form, saving, error, onChange, onSubmit, onClose }) {
   return (
     <ModalShell
       open={open}
@@ -21,14 +23,16 @@ function GrantAdminModal({ open, form, onChange, onSubmit, onClose }) {
       size="md"
     >
       <form className="grid gap-4" onSubmit={onSubmit}>
-        <Field label="User ID" hint="Ưu tiên nếu có">
-          <Input className={COMPACT_INPUT_CLASS} value={form.userId} onChange={(event) => onChange((current) => ({ ...current, userId: event.target.value }))} />
-        </Field>
-        <Field label="Tên đăng nhập">
-          <Input className={COMPACT_INPUT_CLASS} value={form.username} onChange={(event) => onChange((current) => ({ ...current, username: event.target.value }))} />
-        </Field>
+        <FormError error={error} handledFields={GRANT_HANDLED_FIELDS} />
+        <UserPicker
+          token={token}
+          value={form.userId}
+          onChange={(userId) => onChange((current) => ({ ...current, userId }))}
+          hint="Chọn từ danh sách"
+          error={findIssueMessage(error, GRANT_HANDLED_FIELDS)}
+        />
         <div className="flex flex-wrap gap-2">
-          <Button type="submit" size="sm" icon={ShieldPlus}>Cấp admin</Button>
+          <Button type="submit" size="sm" icon={ShieldPlus} loading={saving} disabled={!form.userId}>Cấp admin</Button>
           <Button type="button" size="sm" variant="ghost" onClick={onClose}>Đóng</Button>
         </div>
       </form>
@@ -47,9 +51,10 @@ export default function AdminsView({ token }) {
   })
   const deferredQuery = useDeferredValue(filters.q)
   const [grantModalOpen, setGrantModalOpen] = useState(false)
+  const [grantingAdmin, setGrantingAdmin] = useState(false)
+  const [grantError, setGrantError] = useState(null)
   const [grantForm, setGrantForm] = useState({
     userId: '',
-    username: '',
   })
 
   async function loadAdmins(
@@ -106,16 +111,16 @@ export default function AdminsView({ token }) {
 
   async function handleGrant(event) {
     event.preventDefault()
+    setGrantingAdmin(true)
+    setGrantError(null)
 
     try {
       await grantAdmin(token, {
         userId: grantForm.userId || undefined,
-        username: grantForm.username || undefined,
       })
       toast.success('Đã cấp admin')
       setGrantForm({
         userId: '',
-        username: '',
       })
       setGrantModalOpen(false)
       setFilters((current) => ({ ...current, offset: 0 }))
@@ -125,7 +130,9 @@ export default function AdminsView({ token }) {
         offset: 0,
       })
     } catch (error) {
-      toast.error(formatApiError(error))
+      setGrantError(error)
+    } finally {
+      setGrantingAdmin(false)
     }
   }
 
@@ -226,7 +233,15 @@ export default function AdminsView({ token }) {
               onPrev={() => setFilters((current) => ({ ...current, offset: Math.max(0, current.offset - current.limit) }))}
               onNext={() => setFilters((current) => ({ ...current, offset: current.offset + current.limit }))}
             />
-            <Button size="sm" icon={ShieldPlus} onClick={() => setGrantModalOpen(true)}>
+            <Button
+              size="sm"
+              icon={ShieldPlus}
+              onClick={() => {
+                setGrantError(null)
+                setGrantForm({ userId: '' })
+                setGrantModalOpen(true)
+              }}
+            >
               Cấp admin
             </Button>
           </div>
@@ -242,10 +257,16 @@ export default function AdminsView({ token }) {
 
       <GrantAdminModal
         open={grantModalOpen}
+        token={token}
         form={grantForm}
+        saving={grantingAdmin}
+        error={grantError}
         onChange={setGrantForm}
         onSubmit={handleGrant}
-        onClose={() => setGrantModalOpen(false)}
+        onClose={() => {
+          setGrantModalOpen(false)
+          setGrantError(null)
+        }}
       />
     </div>
   )
